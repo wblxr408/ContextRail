@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ContextRail // EVAL CONTROL</title>
+  <style>
+    :root { --paper:#f1eddf; --ink:#10100e; --acid:#d9ff33; --blue:#1858ff; --red:#ee351e; --pink:#ff98bd; --line:3px solid var(--ink); --shadow:7px 7px 0 var(--ink); }
+    * { box-sizing: border-box; }
+    body { margin:0; color:var(--ink); background-color:var(--paper); background-image:linear-gradient(rgba(16,16,14,.1) 1px, transparent 1px),linear-gradient(90deg,rgba(16,16,14,.1) 1px, transparent 1px); background-size:22px 22px; font-family:"Courier New",ui-monospace,monospace; }
+    button,input,select { font:inherit; }
+    .shell { max-width:1500px; margin:0 auto; padding:18px; }
+    .masthead { display:grid; grid-template-columns: 1fr auto; gap:16px; align-items:end; padding:18px 0 26px; border-bottom:var(--line); }
+    .kicker { margin:0 0 8px; font-size:12px; font-weight:900; letter-spacing:.12em; }
+    h1 { margin:0; max-width:930px; font-family:Impact,"Arial Black",sans-serif; font-size:clamp(45px,8vw,118px); line-height:.78; letter-spacing:-.045em; text-transform:uppercase; }
+    h1 span { display:block; color:var(--red); -webkit-text-stroke:1px var(--ink); transform:translateX(7vw); }
+    .stamp { width:150px; height:150px; padding:16px; border:var(--line); background:var(--acid); box-shadow:var(--shadow); display:flex; align-items:flex-end; transform:rotate(3deg); font-weight:900; font-size:15px; line-height:1; }
+    .notice { display:flex; gap:10px; align-items:flex-start; margin:24px 0; border:var(--line); padding:12px 14px; background:var(--ink); color:var(--paper); font-size:13px; font-weight:700; }
+    .notice b { color:var(--acid); }
+    .control { border:var(--line); background:var(--pink); box-shadow:var(--shadow); padding:18px; }
+    .control-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+    h2 { font-family:Impact,"Arial Black",sans-serif; font-weight:400; letter-spacing:.02em; font-size:31px; line-height:.9; text-transform:uppercase; margin:0; }
+    .chip { display:inline-block; border:2px solid var(--ink); background:var(--paper); padding:4px 7px; font-size:11px; font-weight:900; }
+    .settings { display:grid; grid-template-columns:1fr 1fr .7fr; gap:10px; }
+    .profile-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:12px; }
+    .external-settings { display:none; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; border:var(--line); padding:12px; background:#ddd6c5; }
+    .external-settings.visible { display:grid; }
+    .external-settings h3 { grid-column:1/-1; margin:0; font-family:Impact,"Arial Black",sans-serif; font-size:21px; font-weight:400; letter-spacing:.04em; }
+    .external-settings .wide-input { grid-column:1/-1; }
+    .server-bar { grid-column:1/-1; display:flex; align-items:center; gap:8px; border:2px solid var(--ink); padding:9px; background:var(--paper); }
+    .server-bar strong { font-family:Impact,"Arial Black",sans-serif; font-size:17px; font-weight:400; letter-spacing:.04em; }
+    .server-status { margin-left:auto; font-size:11px; font-weight:900; }
+    .server-status.ready { color:#0b5f31; } .server-status.failed { color:#970000; } .server-log { grid-column:1/-1; min-height:66px; max-height:130px; overflow:auto; border:2px solid var(--ink); background:var(--ink); color:var(--acid); padding:8px; font:11px/1.35 ui-monospace,Consolas,monospace; white-space:pre-wrap; }
+    .profile { margin:0; padding:11px; border:var(--line); background:var(--paper); }
+    .profile legend { padding:2px 6px; background:var(--ink); color:var(--paper); font-size:11px; font-weight:900; }
+    .profile-a { background:var(--acid); } .profile-b { background:#9ac5ff; } .profile-c { background:var(--pink); }
+    .profile label { display:block; margin-top:7px; }
+    label { font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:.05em; }
+    label span { display:block; margin:0 0 5px; }
+    input,select { width:100%; border:2px solid var(--ink); background:var(--paper); padding:11px 10px; outline:none; border-radius:0; }
+    input:focus, select:focus { background:var(--acid); box-shadow:4px 4px 0 var(--blue); }
+    .key-row { display:grid; grid-template-columns:1fr auto; gap:6px; }
+    .icon-button { min-width:44px; border:2px solid var(--ink); background:var(--blue); color:var(--paper); font-weight:900; cursor:pointer; }
+    .agent-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
+    .agent { position:relative; min-height:175px; padding:14px; border:var(--line); background:var(--paper); cursor:pointer; transition:transform .13s ease, box-shadow .13s ease; }
+    .agent:hover { transform:translate(-3px,-3px); box-shadow:6px 6px 0 var(--ink); }
+    .agent.selected { background:var(--acid); box-shadow:7px 7px 0 var(--blue); transform:translate(-3px,-3px); }
+    .agent input { position:absolute; opacity:0; pointer-events:none; }
+    .agent strong { display:block; margin:18px 0 8px; font-family:Impact,"Arial Black",sans-serif; font-size:24px; font-weight:400; line-height:.9; text-transform:uppercase; }
+    .agent p { margin:0; font-size:12px; line-height:1.35; }
+    .agent-meta { display:flex; justify-content:space-between; gap:8px; font-size:10px; font-weight:900; }
+    .agent a { position:absolute; right:10px; bottom:10px; color:var(--blue); font-size:11px; font-weight:900; }
+    .launch-row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:18px; }
+    .launch { border:var(--line); background:var(--red); padding:14px 22px; box-shadow:6px 6px 0 var(--ink); color:var(--paper); cursor:pointer; font-family:Impact,"Arial Black",sans-serif; font-size:22px; letter-spacing:.03em; text-transform:uppercase; }
+    .launch:hover { background:var(--blue); transform:translate(2px,2px); box-shadow:4px 4px 0 var(--ink); }
+    .launch:disabled { cursor:not-allowed; opacity:.58; }
+    .job { font-size:12px; font-weight:700; max-width:650px; }
+    .job.error { color:#8f0000; }
+    .grid { display:grid; grid-template-columns:1.1fr .9fr; gap:18px; margin-top:36px; }
+    .panel { border:var(--line); background:var(--paper); }
+    .panel.wide { grid-column:1/-1; }
+    .panel-heading { display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:var(--line); background:var(--ink); color:var(--paper); padding:12px 14px; }
+    .panel-heading h2 { font-size:23px; }
+    .panel-body { padding:14px; }
+    .run-picker { min-width:150px; max-width:270px; padding:5px; }
+    .overview { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .metric { min-height:115px; border:var(--line); padding:11px; background:var(--paper); }
+    .metric:nth-child(1) { background:var(--blue); color:var(--paper); }
+    .metric:nth-child(2) { background:var(--acid); }
+    .metric:nth-child(3) { background:var(--pink); }
+    .metric small { display:block; font-size:10px; font-weight:900; }
+    .metric strong { display:block; margin-top:13px; font-family:Impact,"Arial Black",sans-serif; font-size:39px; line-height:.9; font-weight:400; }
+    .metric em { display:block; margin-top:7px; font-size:11px; font-style:normal; }
+    .matrix { display:grid; grid-template-columns:repeat(6,1fr); gap:8px; }
+    .task { min-height:84px; border:2px solid var(--ink); padding:8px; background:var(--paper); cursor:pointer; }
+    .task:hover { background:var(--acid); }
+    .task.active { outline:4px solid var(--blue); background:var(--acid); }
+    .task-id { display:block; font-family:Impact,"Arial Black",sans-serif; font-size:23px; line-height:.9; }
+    .task-state { display:flex; gap:4px; margin-top:10px; }
+    .dot { width:14px; height:14px; border:2px solid var(--ink); background:var(--paper); }
+    .dot.ok { background:var(--acid); } .dot.fail { background:var(--red); } .dot.none { background:#bdb8aa; }
+    .legend { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 13px; font-size:11px; font-weight:700; }
+    .legend span { display:flex; align-items:center; gap:5px; }
+    .trace { min-height:307px; max-height:420px; overflow:auto; background:#151512; color:var(--paper); padding:12px; font-size:12px; line-height:1.5; white-space:pre-wrap; }
+    .trace b { color:var(--acid); }
+    .trace .red { color:#ff897d; }
+    .swe { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .swe-box { border:2px solid var(--ink); min-height:105px; padding:10px; background:var(--paper); }
+    .swe-box strong { display:block; font-family:Impact,"Arial Black",sans-serif; font-size:25px; font-weight:400; text-transform:uppercase; }
+    .swe-box p { margin:7px 0 0; font-size:11px; line-height:1.35; }
+    .source-list { margin:14px 0 0; padding:0; list-style:none; border-top:2px solid var(--ink); }
+    .source-list li { display:flex; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:2px solid var(--ink); font-size:11px; font-weight:700; }
+    .source-list a { color:var(--blue); }
+    .empty { border:2px dashed var(--ink); padding:15px; background:#ddd6c5; font-size:12px; line-height:1.45; }
+    footer { display:flex; justify-content:space-between; gap:20px; padding:30px 0 10px; font-size:11px; font-weight:900; }
+    @media (max-width:850px) { .masthead { grid-template-columns:1fr; } .stamp { display:none; } h1 span { transform:none; } .settings,.profile-grid,.agent-grid,.grid { grid-template-columns:1fr; } .overview { grid-template-columns:1fr; } .matrix { grid-template-columns:repeat(3,1fr); } .panel.wide { grid-column:auto; } .launch-row { align-items:stretch; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div><p class="kicker">CONTEXT RAIL / LOCAL EVALUATION WORKBENCH / NO SECRETS ON DISK</p><h1>MEASURE<br><span>THE HANDOFF</span></h1></div>
+      <div class="stamp">EVALUATE<br>THE CONTEXT<br>NOT THE HYPE</div>
+    </header>
+
+    <div class="notice"><b>LOCAL ONLY</b><span>Dashboard 不保存 API Key；L2 仅把它放入官方 CLI 子进程环境，L3 仅转发给你配置的 OpenHands Server。后者的持久化由它自己的 OH_SECRET_KEY 配置决定。</span></div>
+
+    <section class="control" aria-labelledby="control-title">
+      <div class="control-title"><h2 id="control-title">01 // RUN CONTROL</h2><span class="chip">A/B/C + AGENT COMPLEXITY</span></div>
+      <div class="settings">
+        <label><span>Experiment mode</span><select id="mode"><option value="context">单模型 A/B/C 上下文对照</option><option value="switch">多 Profile 切换实验</option></select></label>
+        <label><span>Switch trajectory</span><select id="trajectory"><option value="A->B">A → B 正常交接</option><option value="A->B->A">A → B → A 回切</option><option value="A->B->C">A → B → C 三级切换</option><option value="A->B-failover">A 故障 → B 接管</option></select></label>
+        <label><span>Context budget</span><input id="budget" type="number" min="256" max="200000" value="4000"></label>
+      </div>
+      <div class="profile-grid">
+        <fieldset class="profile profile-a"><legend>PROFILE A / SOURCE</legend><label><span>API URL</span><input id="baseUrlA" inputmode="url" placeholder="https://api.example.com/v1"></label><label><span>Model</span><input id="modelA" placeholder="source-model"></label><label><span>API Key</span><div class="key-row"><input class="api-key" id="apiKeyA" type="password" autocomplete="off" placeholder="sk-…"><button class="icon-button toggle-key" type="button">◉</button></div></label></fieldset>
+        <fieldset class="profile profile-b"><legend>PROFILE B / TARGET</legend><label><span>API URL</span><input id="baseUrlB" inputmode="url" placeholder="https://api.example.com/v1"></label><label><span>Model</span><input id="modelB" placeholder="target-model"></label><label><span>API Key</span><div class="key-row"><input class="api-key" id="apiKeyB" type="password" autocomplete="off" placeholder="sk-…"><button class="icon-button toggle-key" type="button">◉</button></div></label></fieldset>
+        <fieldset class="profile profile-c"><legend>PROFILE C / OPTIONAL</legend><label><span>API URL</span><input id="baseUrlC" inputmode="url" placeholder="https://api.example.com/v1"></label><label><span>Model</span><input id="modelC" placeholder="fallback-model"></label><label><span>API Key</span><div class="key-row"><input class="api-key" id="apiKeyC" type="password" autocomplete="off" placeholder="sk-…"><button class="icon-button toggle-key" type="button">◉</button></div></label></fieldset>
+      </div>
+      <section class="external-settings" id="sweSettings" aria-label="SWE-agent settings"><h3>L2 // OFFICIAL SWE-AGENT TARGET</h3><label><span>GitHub repository</span><input id="repositoryUrl" value="https://github.com/SWE-agent/test-repo"></label><label><span>Issue URL</span><input id="issueUrl" value="https://github.com/SWE-agent/test-repo/issues/1"></label><label><span>Per-instance cost USD</span><input id="costLimit" type="number" min="0.01" max="100" step="0.01" value="2"></label><div class="empty">执行官方 <code>sweagent run</code>。其 Docker / cloud sandbox、trajectory 与 patch 由上游实现接管。</div></section>
+      <section class="external-settings" id="openhandsSettings" aria-label="OpenHands settings"><h3>L3 // OPENHANDS AGENT SERVER</h3><div class="server-bar"><strong>LOCAL SERVER</strong><button class="icon-button" type="button" id="startOpenhands">START</button><button class="icon-button" type="button" id="stopOpenhands">STOP</button><label><span>Port</span><input id="openhandsPort" type="number" min="1024" max="65535" value="8000"></label><span class="server-status" id="openhandsStatus">CHECKING…</span></div><pre class="server-log" id="openhandsLog">本地 L3 Server 尚未启动。</pre><label><span>Agent Server URL</span><input id="openhandsServerUrl" value="http://127.0.0.1:8000"></label><label><span>Server API Key optional</span><div class="key-row"><input class="api-key" id="openhandsServerApiKey" type="password" autocomplete="off"><button class="icon-button toggle-key" type="button">◉</button></div></label><label><span>Workspace on Agent Server</span><input id="openhandsWorkspace" value="workspace/project"></label><label><span>Max iterations / seconds</span><div class="key-row"><input id="openhandsMaxIterations" type="number" min="1" max="500" value="30"><input id="openhandsMaxRuntime" type="number" min="10" max="3600" value="600"></div></label><label class="wide-input"><span>Task prompt</span><textarea id="openhandsTask" rows="4">Inspect the repository, identify the requested change, implement it, run focused tests, and summarize the patch with evidence.</textarea></label><div class="empty wide-input">START 会直接运行已安装的官方 <code>python -m openhands.agent_server</code>。服务就绪后，L3 会创建 conversation、发送 <code>run: true</code> event，并轮询官方事件流与最终响应。</div></section>
+      <div class="agent-grid" id="agentGrid" role="radiogroup" aria-label="选择 Agent 复杂度"></div>
+      <div class="launch-row"><button class="launch" id="launch" type="button">RUN 12 × A/B/C</button><div class="job" id="job">选择 L1 会真实运行 36 条最小 Agent 评测；L2/L3 会直接启动官方实现并回传原生轨迹。</div></div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-heading"><h2>02 // Overview</h2><select class="run-picker" id="runPicker" aria-label="选择报告"><option value="">选择已完成运行</option></select></div>
+        <div class="panel-body" id="overview"><div class="empty">尚未载入报告。运行 L1 或从下拉框选择 `evaluation-runs/` 下已有的结果。</div></div>
+      </article>
+      <article class="panel">
+        <div class="panel-heading"><h2>03 // SWE-BENCH</h2><span class="chip">8 VERIFIED</span></div>
+        <div class="panel-body">
+          <div class="swe"><div class="swe-box"><strong>8 / 8</strong><p>官方 task input 已核验；gold patch 与测试标签排除在 Agent 输入外。</p></div><div class="swe-box"><strong>DOCKER?</strong><p>官方 verifier 仅在 Docker daemon 可用后执行，结果再回流此页。</p></div></div>
+          <ul class="source-list"><li><span>SWE-agent / L2</span><a href="https://github.com/SWE-agent/SWE-agent" target="_blank" rel="noreferrer">OFFICIAL SOURCE ↗</a></li><li><span>OpenHands / L3</span><a href="https://github.com/OpenHands/software-agent-sdk" target="_blank" rel="noreferrer">OFFICIAL SOURCE ↗</a></li><li><span>Inspect AI / unified logs</span><a href="https://github.com/UKGovernmentBEIS/inspect_ai" target="_blank" rel="noreferrer">OFFICIAL SOURCE ↗</a></li></ul>
+        </div>
+      </article>
+      <article class="panel wide">
+        <div class="panel-heading"><h2>04 // PRESSURE MATRIX</h2><span class="chip">CLICK A CELL FOR TRACE</span></div>
+        <div class="panel-body"><div class="legend"><span><i class="dot ok"></i>通过</span><span><i class="dot fail"></i>未通过</span><span><i class="dot none"></i>无结果</span><span>A / B / C 从左到右</span></div><div class="matrix" id="matrix"><div class="empty">等待运行数据。</div></div></div>
+      </article>
+      <article class="panel wide">
+        <div class="panel-heading"><h2>05 // PACKET & TOOL TRACE</h2><span class="chip" id="traceTitle">NO TRACE SELECTED</span></div>
+        <div class="panel-body"><div class="trace" id="trace">选择压力任务后，显示 packet 编译、模型回合、context.get 冷页回读与验收事件。<br><br><b>原则：</b>页面不读取、更不显示 API Key。</div></div>
+      </article>
+    </section>
+    <footer><span>CONTEXT RAIL // EVIDENCE FIRST</span><span>BRUTAL LOCAL INSTRUMENTATION</span></footer>
+  </main>
+  <script>
+    const state = { catalog: [], selected: 'minimal', run: null, runs: [] };
+    const $ = id => document.getElementById(id);
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    async function api(path, options) { const response = await fetch(path, options); const data = await response.json(); if (!response.ok) throw new Error(data.error || '请求失败'); return data; }
+    function renderAgents() {
+      $('agentGrid').innerHTML = state.catalog.map(agent => `<label class="agent ${agent.id === state.selected ? 'selected':''}" data-agent="${agent.id}"><input type="radio" name="agent" value="${agent.id}" ${agent.id === state.selected ? 'checked':''}><div class="agent-meta"><span>${escape(agent.complexity)}</span><span>${agent.id === 'openhands' ? 'SERVER CHECK' : agent.available ? 'READY':'INSTALL REQUIRED'}</span></div><strong>${escape(agent.name)}</strong><p>${escape(agent.summary)}</p>${agent.url ? `<a href="${agent.url}" target="_blank" rel="noreferrer">${escape(agent.source)} ↗</a>`:''}</label>`).join('');
+      document.querySelectorAll('.agent').forEach(card => card.addEventListener('click', () => { state.selected = card.dataset.agent; renderAgents(); updateLaunchLabel(); }));
+    }
+    function updateLaunchLabel() { const minimal = state.selected === 'minimal', switching = $('mode').value === 'switch', swe = state.selected === 'swe-agent'; $('trajectory').disabled = !switching; $('sweSettings').classList.toggle('visible', swe); $('openhandsSettings').classList.toggle('visible', state.selected === 'openhands'); $('launch').textContent = minimal ? (switching ? 'RUN SWITCH SUITE' : 'RUN 12 × A/B/C') : swe ? 'RUN OFFICIAL SWE-AGENT' : 'RUN OPENHANDS AGENT'; $('job').textContent = minimal ? (switching ? 'Profiles A/B 将通过 ContextRail 交接事务切换；A→B→C 还需要填写 C。' : '单模型 A Profile 将运行 A/B/C，隔离上下文策略变量。') : switching ? 'L2/L3 保持上游 Agent loop 原样，不能代替 ContextRail 正确性交接实验；请切回单模型模式。' : swe ? '直接启动安装后的官方 SWE-agent CLI，并回传 stdout、trajectory 与 patch。' : '先用 START 启动本地 OpenHands Server；服务就绪后，再以官方 REST contract 创建 conversation 并回传 events。'; }
+    function renderOpenhandsServer(server) { const stateName=server.state||'unknown'; $('openhandsStatus').textContent=`${stateName.toUpperCase()}${server.pid ? ` / PID ${server.pid}`:''}${server.installable ? '' : ' / INSTALL REQUIRED'}`; $('openhandsStatus').className=`server-status ${stateName}`; $('openhandsLog').textContent=(server.log||[]).join('\n') || '本地 L3 Server 尚未启动。'; if (server.url) $('openhandsServerUrl').value=server.url; $('startOpenhands').disabled=stateName==='ready'||stateName==='starting'; $('stopOpenhands').disabled=stateName==='stopped'||stateName==='failed'; }
+    async function refreshOpenhandsServer() { try { renderOpenhandsServer(await api('/api/openhands-server')); } catch(error) { $('openhandsStatus').textContent=`CHECK FAILED: ${error.message}`; $('openhandsStatus').className='server-status failed'; } }
+    async function manageOpenhands(action) { const button=action==='start' ? $('startOpenhands') : $('stopOpenhands'); button.disabled=true; try { const options=action==='start' ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({port:Number($('openhandsPort').value)})} : {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}; renderOpenhandsServer(await api(`/api/openhands-server/${action}`,options)); if(action==='start') { setTimeout(refreshOpenhandsServer,700); setTimeout(refreshOpenhandsServer,1800); } } catch(error) { $('job').className='job error'; $('job').textContent=error.message; await refreshOpenhandsServer(); } }
+    function renderOverview(metrics, kind) {
+      if (!metrics?.length) { $('overview').innerHTML = '<div class="empty">该报告没有可显示的 metrics.csv。</div>'; return; }
+      if (kind === 'switch') { const byTrajectory = [...new Set(metrics.map(row=>row.trajectory))].map(trajectory => { const rows=metrics.filter(row=>row.trajectory===trajectory), passed=rows.filter(row=>row.success==='True'||row.success==='true').length, handoffs=rows.reduce((sum,row)=>sum+Number(row.handoffs||0),0); return {trajectory,passed,total:rows.length,handoffs}; }); $('overview').innerHTML=`<div class="overview">${byTrajectory.map(item=>`<div class="metric"><small>${escape(item.trajectory)}</small><strong>${item.passed}/${item.total}</strong><em>${item.handoffs} handoffs · receipt + epoch + action ledger</em></div>`).join('')}</div>`; return; }
+      const by = ['A','B','C'].map(strategy => { const rows = metrics.filter(row => row.strategy === strategy); const passed = rows.filter(row => row.success === 'True' || row.success === 'true').length; const tokens = rows.reduce((sum,row)=>sum + Number(row.input_tokens || 0),0); const tools = rows.reduce((sum,row)=>sum + Number(row.tool_calls || 0),0); return {strategy, passed, total: rows.length, tokens, tools}; });
+      $('overview').innerHTML = `<div class="overview">${by.map(item => `<div class="metric"><small>STRATEGY ${item.strategy}</small><strong>${item.passed}/${item.total}</strong><em>${item.tokens.toLocaleString()} in-tokens · ${item.tools} tool calls</em></div>`).join('')}</div>`;
+    }
+    function status(row) { if (!row) return 'none'; return row.success === 'True' || row.success === 'true' ? 'ok' : 'fail'; }
+    function renderMatrix(tasks, metrics, kind) {
+      if (kind === 'switch') { const grouped={}; metrics.forEach(row => { (grouped[row.task_id] ||= []).push(row); }); $('matrix').innerHTML=Object.entries(grouped).map(([task,rows])=>`<button type="button" class="task" data-task="${task}" data-trajectory="${rows[0].trajectory}"><span class="task-id">${task}</span><span class="task-state">${rows.map(row=>`<i class="dot ${row.success==='True'||row.success==='true'?'ok':'fail'}" title="${escape(row.trajectory)}"></i>`).join('')}</span></button>`).join(''); document.querySelectorAll('.task').forEach(cell=>cell.addEventListener('click',()=>showSwitchTrace(cell.dataset.task,cell.dataset.trajectory,cell))); return; }
+      if (!tasks?.length) { $('matrix').innerHTML = '<div class="empty">该报告没有压力任务详情。</div>'; return; }
+      $('matrix').innerHTML = tasks.map(task => `<button type="button" class="task" data-task="${task.task_id}"><span class="task-id">${task.task_id}</span><span class="task-state">${['A','B','C'].map(s => `<i class="dot ${status(task.strategies[s])}" title="${s}"></i>`).join('')}</span></button>`).join('');
+      document.querySelectorAll('.task').forEach(cell => cell.addEventListener('click', () => showTrace(cell.dataset.task, 'C', cell)));
+    }
+    async function showTrace(task, strategy, cell) {
+      if (!state.run) return;
+      document.querySelectorAll('.task').forEach(node => node.classList.remove('active')); cell?.classList.add('active');
+      $('traceTitle').textContent = `${task} / ${strategy}`;
+      $('trace').textContent = '读取 trace…';
+      try { const trace = await api(`/api/trace?id=${encodeURIComponent(state.run)}&task=${encodeURIComponent(task)}&strategy=${strategy}`); $('trace').textContent = JSON.stringify(trace.events, null, 2); } catch (error) { $('trace').textContent = `TRACE ERROR: ${error.message}`; }
+    }
+    async function showSwitchTrace(task, trajectory, cell) { document.querySelectorAll('.task').forEach(node=>node.classList.remove('active')); cell?.classList.add('active'); $('traceTitle').textContent=`${task} / ${trajectory}`; $('trace').textContent='读取 handoff trace…'; try { const trace=await api(`/api/switch-trace?id=${encodeURIComponent(state.run)}&task=${encodeURIComponent(task)}&trajectory=${encodeURIComponent(trajectory)}`); $('trace').textContent=JSON.stringify(trace.events,null,2); } catch(error) { $('trace').textContent=`TRACE ERROR: ${error.message}`; } }
+    async function loadRun(id) {
+      if (!id) return;
+      const data = await api(`/api/run?id=${encodeURIComponent(id)}`); state.run = id; if (data.kind === 'external') { const result=data.result||{}; $('overview').innerHTML=`<div class="overview"><div class="metric"><small>UPSTREAM AGENT</small><strong>${escape(result.agent||'')}</strong><em>${escape(result.status||'unknown')}</em></div><div class="metric"><small>ARTIFACTS</small><strong>${(result.artifacts||[]).length}</strong><em>${escape((result.details||{}).model||'')}</em></div><div class="metric"><small>PROVENANCE</small><strong>LIVE</strong><em>${escape((result.details||{}).upstream_revision||'')}</em></div></div>`; $('matrix').innerHTML='<div class="empty">外部 Agent 的原生轨迹在下方显示；它不进入 L1 的 12 题 A/B/C 质量矩阵。</div>'; $('traceTitle').textContent=`${result.agent||'EXTERNAL'} / NATIVE TRACE`; $('trace').textContent=typeof data.trace==='string'?data.trace:JSON.stringify(data.trace,null,2); return; } renderOverview(data.metrics, data.kind); renderMatrix(data.tasks, data.metrics, data.kind); $('traceTitle').textContent = 'SELECT A TASK'; $('trace').textContent = data.kind === 'switch' ? '点击任务格，查看 prepare、packet receipt、validate、activate、epoch 与动作去重事件。' : '点击上方任务格。默认读取 C 策略的 Packet 与冷页工具 trace。';
+    }
+    async function refreshState() {
+      const data = await api('/api/state'); state.catalog = data.catalog; state.runs = data.runs; renderAgents();
+      const picker = $('runPicker'); const old = picker.value; picker.innerHTML = '<option value="">选择已完成运行</option>' + data.runs.map(run => `<option value="${escape(run.id)}">${escape(run.label)}</option>`).join('');
+      if (old && data.runs.some(run=>run.id===old)) picker.value=old; else if (!state.run && data.runs[0]) { picker.value=data.runs[0].id; await loadRun(data.runs[0].id); }
+    }
+    function profile(id) { return {id,base_url:$(`baseUrl${id}`).value.trim(),model:$(`model${id}`).value.trim(),api_key:$(`apiKey${id}`).value}; }
+    async function launch() {
+      const mode=$('mode').value, profiles=['A','B','C'].map(profile).filter(item=>item.base_url||item.model||item.api_key), payload = { agent:state.selected, mode, trajectory:$('trajectory').value, profiles, base_url:profiles[0]?.base_url||'', model:profiles[0]?.model||'', api_key:profiles[0]?.api_key||'', budget:Number($('budget').value), repository_url:$('repositoryUrl').value.trim(), issue_url:$('issueUrl').value.trim(), cost_limit:Number($('costLimit').value), openhands_server_url:$('openhandsServerUrl').value.trim(), openhands_server_api_key:$('openhandsServerApiKey').value, openhands_workspace:$('openhandsWorkspace').value.trim(), openhands_task:$('openhandsTask').value.trim(), openhands_max_iterations:Number($('openhandsMaxIterations').value), openhands_max_runtime_seconds:Number($('openhandsMaxRuntime').value) };
+      const required = mode === 'switch' ? profiles.filter(item=>item.id==='A'||item.id==='B') : profiles.filter(item=>item.id==='A');
+      if (required.some(item=>!item.base_url||!item.model||!item.api_key) || (mode==='switch' && payload.trajectory==='A->B->C' && !profiles.some(item=>item.id==='C'&&item.base_url&&item.model&&item.api_key))) { $('job').className='job error'; $('job').textContent='请填写 A/B 的完整 API Profile；A→B→C 还需要完整的 C。Key 不会保存到 Dashboard 运行文件。'; return; }
+      $('launch').disabled=true; $('job').className='job'; $('job').textContent='正在创建本地任务…';
+      try { const job = await api('/api/jobs', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); pollJob(job.id); } catch (error) { $('launch').disabled=false; $('job').className='job error'; $('job').textContent=error.message; }
+    }
+    async function pollJob(id) { try { const job = await api(`/api/job?id=${encodeURIComponent(id)}`); const tail=(job.log||[]).slice(-2).join(' / '); $('job').textContent = `${job.id}: ${job.status}${job.error ? ` — ${job.error}`:''}${tail ? ` — ${tail}`:''}`; if (job.status === 'queued' || job.status === 'running') return setTimeout(()=>pollJob(id),900); $('launch').disabled=false; if (job.status === 'complete') { await refreshState(); $('runPicker').value=job.output; await loadRun(job.output); } } catch (error) { $('launch').disabled=false; $('job').className='job error'; $('job').textContent=error.message; } }
+    document.querySelectorAll('.toggle-key').forEach(button=>button.addEventListener('click',()=>{ const key=button.parentElement.querySelector('.api-key'); key.type=key.type==='password'?'text':'password'; }));
+    $('mode').addEventListener('change', updateLaunchLabel);
+    $('startOpenhands').addEventListener('click',()=>manageOpenhands('start')); $('stopOpenhands').addEventListener('click',()=>manageOpenhands('stop'));
+    $('launch').addEventListener('click', launch); $('runPicker').addEventListener('change', event => loadRun(event.target.value));
+    refreshState().then(()=>{ updateLaunchLabel(); return refreshOpenhandsServer(); }).catch(error => { $('job').className='job error'; $('job').textContent=error.message; });
+  </script>
+</body>
+</html>

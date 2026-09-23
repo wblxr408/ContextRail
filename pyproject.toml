@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contextrail"
+version = "0.1.0"
+description = "Versioned evidence and context handoffs for model-independent agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+oidc = ["PyJWT[crypto]>=2.10,<3"]
+eval = ["inspect-ai==0.3.10", "openai>=3,<4"]
+swebench = ["swebench==5.0.2"]
+
+[project.scripts]
+contextrail = "contextrail.cli:main"
+contextrail-eval = "contextrail.evaluation.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["contextrail*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

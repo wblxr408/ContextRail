@@ -1,0 +1,29 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# ── Virtual environments ──
+.venv/
+.agent-venv/
+.eval-venv/
+
+# ── Runtime / generated data ──
+.context-rail/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+.coverage
+
+# ── Secrets ──
+evaluation-config/.secret.*
+.secret.*
+
+# ── Non-core: keep only contextrail/ + tests/ + build files under version control ──
+docs/
+scripts/
+evaluation-config/
+evaluation-runs/
+tmp/
