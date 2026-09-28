@@ -111,6 +111,40 @@ class AdvancedContextTests(RailTest):
         with self.assertRaises(InvalidRequest):
             controller.request(outside)
 
+    def test_context_controller_expands_transitive_dependency_closure(self):
+        # A -> B -> C declared closure: requesting A must pull B and C too, so a
+        # recovered root never leaves a transitive hard dependency behind.
+        a = self.put("a", b"root A")
+        b = self.put("b", b"dependency B")
+        c = self.put("c", b"transitive dependency C")
+        sid = self.snapshot(Selection(a), Selection(b), Selection(c))
+        controller = ContextController(self.compiler, self.scope, sid, self.a.session,
+                                       budget=RequestBudget(10_000),
+                                       dependencies={a: (b,), b: (c,)})
+        controller.request(a)
+        turn = controller.compile("modify")
+        self.assertEqual(set(turn.requested), {a, b, c})
+
+    def test_clear_recovery_preserves_dependencies_other_roots_still_need(self):
+        # Two roots share dependency S.  Clearing root1 must keep S because
+        # root2 still needs it, but must drop root1's private dependency P1.
+        root1 = self.put("root1", b"root one")
+        root2 = self.put("root2", b"root two")
+        shared = self.put("shared", b"shared dependency")
+        private1 = self.put("private1", b"private to root one")
+        sid = self.snapshot(Selection(root1), Selection(root2), Selection(shared), Selection(private1))
+        controller = ContextController(self.compiler, self.scope, sid, self.a.session,
+                                       budget=RequestBudget(10_000),
+                                       dependencies={root1: (shared, private1), root2: (shared,)})
+        controller.request(root1)
+        controller.request(root2)
+        controller.clear_recovery(root1)
+        turn = controller.compile("modify")
+        self.assertIn(shared, set(turn.requested))
+        self.assertIn(root2, set(turn.requested))
+        self.assertNotIn(private1, set(turn.requested))
+        self.assertNotIn(root1, set(turn.requested))
+
     def test_cache_layout_reserves_budget_and_bounds_cold_index(self):
         stable = self.put("contract", b"stable contract")
         required = self.put("objective", b"dynamic requirement")

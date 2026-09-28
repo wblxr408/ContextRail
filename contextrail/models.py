@@ -108,6 +108,34 @@ class Selection:
 
 
 @dataclass(frozen=True)
+class SelectionGroup:
+    """An atomic load unit: a set of evidence refs that load whole or not at all.
+
+    A snapshot carrying groups is compiled with group semantics: a ``required``
+    group either loads every member or fails with ``BudgetExceeded`` (never a
+    partial), and an optional group either loads whole or stays entirely cold.
+    ``members`` is the already-expanded dependency closure produced by the
+    planner, so the compiler enforces atomicity without re-deriving relations.
+    """
+
+    id: str
+    members: tuple[Ref, ...]
+    required: bool = False
+    priority: int = 0
+
+    def __post_init__(self) -> None:
+        identifier(self.id)
+        if not isinstance(self.members, tuple) or not self.members or any(
+                not isinstance(ref, Ref) for ref in self.members):
+            raise InvalidRequest("A selection group needs a nonempty tuple of references.")
+        if len(set(self.members)) != len(self.members):
+            raise InvalidRequest("Selection group members must be unique.")
+        if type(self.required) is not bool:
+            raise InvalidRequest("Selection group required flag must be boolean.")
+        integer(self.priority)
+
+
+@dataclass(frozen=True)
 class Artifact:
     ref: Ref
     sha256: str

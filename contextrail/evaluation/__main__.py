@@ -49,6 +49,12 @@ def main(argv: list[str] | None = None) -> int:
     dashboard.add_argument("--port", type=int, default=0,
                            help="Loopback port; defaults to 0 so Windows selects a free port")
     dashboard.add_argument("--runs-root", type=Path, default=Path("evaluation-runs"))
+    ablation = commands.add_parser("semantic-ablation",
+                                   help="Run the deterministic C0/C1/C2 semantic-layer ablation (no model)")
+    ablation.add_argument("--output", type=Path, default=Path("evaluation-runs/semantic-ablation"))
+    ablation.add_argument("--budget", type=int, default=10_000,
+                          help="Compiler byte budget; generous by default so completeness, not room, is measured")
+    ablation.add_argument("--chart", action="store_true", help="Also render a PNG chart (requires matplotlib)")
     args = parser.parse_args(argv)
     if args.command == "environment":
         print(environment_status())
@@ -74,6 +80,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "dashboard":
         serve_dashboard(host=args.host, port=args.port, runs_root=args.runs_root)
+        return 0
+    if args.command == "semantic-ablation":
+        from .semantic_ablation import run_ablation_suite
+        results = run_ablation_suite(args.output, budget=args.budget)
+        complete = sum(1 for r in results if r.outcomes["C2"]["closure_complete"])
+        print(f"C2 closure complete: {complete}/{len(results)}; report: {args.output / 'ablation-report.md'}")
+        if args.chart:
+            from .semantic_chart import render_ablation_chart
+            print(f"chart: {render_ablation_chart(args.output)}")
         return 0
     suite = {"control": STRESS_TASKS, "pressure": PRESSURE_TASKS, "all": ALL_TASKS}[args.suite]
     # The fixture model answers from whichever task set it is given, so it must

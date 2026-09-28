@@ -83,6 +83,11 @@ class ContextController:
                 self._validate_snapshot_ref(dependency)
         self._requested: set[Ref] = set()
         self._recoveries: set[Ref] = set()
+        # Roots the host/model explicitly asked to recover.  The requested set is
+        # always the union of these roots' dependency closures, so evicting one
+        # root is a matter of recomputing that union — a shared dependency of a
+        # still-active root is retained without special-casing.
+        self._recovery_roots: set[Ref] = set()
 
     def compile(self, phase: str) -> TurnContext:
         if phase not in _PHASES:
@@ -100,15 +105,42 @@ class ContextController:
         return TurnContext(phase, packet, requested, len(self._recoveries))
 
     def request(self, ref: Ref) -> bool:
-        """Schedule a page and its declared dependencies; deduplicate reads."""
+        """Schedule a page and its declared dependencies; deduplicate reads.
+
+        When a ref has a declared dependency closure, requesting the root pulls
+        the whole transitive closure (cycle-safe) so recovering one member never
+        leaves a hard dependency behind.  Requested pages become mandatory for
+        the recompiled view.
+        """
         self._validate_snapshot_ref(ref)
-        added = ref not in self._requested
-        self._requested.add(ref)
-        self._recoveries.add(ref)
-        for dependency in self._dependencies.get(ref, ()):
-            self._requested.add(dependency)
-            self._recoveries.add(dependency)
+        added = ref not in self._recovery_roots
+        self._recovery_roots.add(ref)
+        self._rebuild_recovery()
         return added
+
+    def _rebuild_recovery(self) -> None:
+        """Recompute the requested set as the union of active roots' closures."""
+        union: set[Ref] = set()
+        for root in self._recovery_roots:
+            union.update(self._closure(root))
+        self._requested = union
+        self._recoveries = set(union)
+
+    def _closure(self, ref: Ref) -> list[Ref]:
+        """Cycle-safe transitive dependency closure over declared dependencies."""
+        seen: set[Ref] = set()
+        order: list[Ref] = []
+        stack = [ref]
+        while stack:
+            current = stack.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            order.append(current)
+            for dependency in self._dependencies.get(current, ()):
+                if dependency not in seen:
+                    stack.append(dependency)
+        return order
 
     def register_dependencies(self, ref: Ref, dependencies: tuple[Ref, ...]) -> None:
         """Declare host-verified related evidence for dependency-aware recovery."""
@@ -141,9 +173,17 @@ class ContextController:
         return self.request(ref)
 
     def clear_recovery(self, ref: Ref) -> None:
-        """Allow a no-longer-relevant page to return to cold storage next turn."""
+        """Retire a recovered root, keeping dependencies other roots still need.
+
+        Removing a recovery root drops the whole requested set to the union of
+        the remaining active roots' closures.  A dependency shared with a root
+        that is still active is therefore preserved automatically, and a root's
+        private dependencies are released — evicting one root can never silently
+        strand another root's material, nor keep dead pages hot.
+        """
         self._validate_snapshot_ref(ref)
-        self._requested.discard(ref)
+        self._recovery_roots.discard(ref)
+        self._rebuild_recovery()
 
     def _validate_snapshot_ref(self, ref: Ref) -> None:
         if not isinstance(ref, Ref):

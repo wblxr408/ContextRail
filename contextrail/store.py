@@ -16,8 +16,8 @@ from typing import Callable, Iterator
 import uuid
 
 from .errors import AccessDenied, Conflict, IntegrityError, InvalidRequest, NotFound, StaleSnapshot, Unavailable
-from .models import (Artifact, Compaction, Handoff, Lease, Ref, RequestUsage, Scope, Selection, Summary,
-                     Target, TaskStateItem, UsageRecord, canonical, digest, identifier, integer, unicode_text)
+from .models import (Artifact, Compaction, Handoff, Lease, Ref, RequestUsage, Scope, Selection, SelectionGroup,
+                     Summary, Target, TaskStateItem, UsageRecord, canonical, digest, identifier, integer, unicode_text)
 
 
 SCHEMA_V1 = """
@@ -143,6 +143,10 @@ CREATE INDEX task_state_items_scope_status ON task_state_items(scope,status,crea
 APPLICATION_ID = 0x43524C31
 CORE_SCHEMA_VERSION = 6
 SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
+# Snapshot body schemas this build can read.  v2 adds selection_groups; a body
+# whose schema is not listed here is refused by load_snapshot rather than
+# silently degraded to individual selections.
+SUPPORTED_SNAPSHOT_SCHEMAS = frozenset({"contextrail.snapshot/v1", "contextrail.snapshot/v2"})
 
 
 class Store:
@@ -468,11 +472,23 @@ class Store:
             self._event(scope, "artifacts.purged", count=count)
         return count
 
-    def snapshot(self, scope: Scope, lease: Lease, selections: tuple[Selection, ...]) -> str:
+    def snapshot(self, scope: Scope, lease: Lease, selections: tuple[Selection, ...],
+                 *, groups: tuple[SelectionGroup, ...] = ()) -> str:
         if not isinstance(selections, (tuple, list)) or any(not isinstance(s, Selection) for s in selections):
             raise InvalidRequest("Expected evidence selections.")
         if len({s.ref for s in selections}) != len(selections):
             raise InvalidRequest("Duplicate evidence references.")
+        if not isinstance(groups, (tuple, list)) or any(not isinstance(g, SelectionGroup) for g in groups):
+            raise InvalidRequest("Expected selection groups.")
+        if len({g.id for g in groups}) != len(groups):
+            raise InvalidRequest("Duplicate selection group id.")
+        selected_refs = {s.ref for s in selections}
+        for group in groups:
+            # A group can only bind evidence the snapshot actually selects, so a
+            # group member can never smuggle in an unselected artifact revision.
+            missing = [ref for ref in group.members if ref not in selected_refs]
+            if missing:
+                raise InvalidRequest("Selection group references evidence outside the snapshot.")
         with self.transaction():
             task = self._lease(scope, lease)
             evidence = []
@@ -482,11 +498,19 @@ class Store:
                     self._check_head(scope, selection.ref)
                 evidence.append({**asdict(selection), "sha256": artifact.sha256})
             task_state = [asdict(item) for item in self.task_state(scope)]
-            body = canonical({"schema": "contextrail.snapshot/v1", "scope": asdict(scope),
-                              "version": task["version"], "objective": task["objective"],
-                              "constraints": json.loads(task["constraints_json"]),
-                              "acceptance": json.loads(task["acceptance_json"]), "task_state": task_state,
-                              "evidence": evidence})
+            body_map = {"schema": "contextrail.snapshot/v1", "scope": asdict(scope),
+                        "version": task["version"], "objective": task["objective"],
+                        "constraints": json.loads(task["constraints_json"]),
+                        "acceptance": json.loads(task["acceptance_json"]), "task_state": task_state,
+                        "evidence": evidence}
+            if groups:
+                # Group semantics live in a v2 snapshot.  A reader that does not
+                # understand groups must refuse this snapshot rather than ignore
+                # the field and load members individually, so the schema tag is
+                # bumped only when groups are actually present.
+                body_map["schema"] = "contextrail.snapshot/v2"
+                body_map["selection_groups"] = [asdict(group) for group in groups]
+            body = canonical(body_map)
             sid = uuid.uuid4().hex
             self.db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",
                             (scope.key, sid, task["version"], body, digest(body.encode("utf-8"))))
@@ -508,6 +532,12 @@ class Store:
         if require_current and task["version"] != row["version"]:
             raise StaleSnapshot("Task changed since the snapshot was captured.")
         result = json.loads(row["body"])
+        # A snapshot carrying group semantics is a v2 body.  Refuse any schema a
+        # reader in this build does not understand rather than ignore its extra
+        # fields and load evidence individually, which would break group
+        # atomicity.  v1 stays exactly as before.
+        if result.get("schema") not in SUPPORTED_SNAPSHOT_SCHEMAS:
+            raise IntegrityError("Unsupported snapshot schema version.")
         for selection in result["evidence"]:
             ref = Ref(**selection["ref"])
             if self.get(scope, ref).sha256 != selection["sha256"]:

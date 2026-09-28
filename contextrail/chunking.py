@@ -174,3 +174,27 @@ def selections_for_chunks(chunks: tuple[EvidenceChunk, ...], *, required: bool =
         refs.extend((chunk.ref, *chunk.dependencies))
     unique = tuple(dict.fromkeys(refs))
     return tuple(Selection(ref, required=required, priority=priority) for ref in unique)
+
+
+def uncovered_spans(ref: Ref, size: int, chunks: tuple[EvidenceChunk, ...]) -> tuple[tuple[str, int, int, int], ...]:
+    """Report byte ranges of ``ref`` that no chunk covers.
+
+    Semantic ranking can only recall candidates that exist; a leading module
+    docstring, a decorator, or heading preamble that the structural chunker did
+    not emit would otherwise be invisible.  Recording the gap as
+    ``(name, revision, start, end)`` lets the index expose a raw fallback entry
+    instead of silently dropping the range.  Only same-revision chunks of this
+    artifact are considered.
+    """
+    intervals = sorted((chunk.ref.start, chunk.ref.end if chunk.ref.end is not None else size)
+                       for chunk in chunks
+                       if chunk.ref.name == ref.name and chunk.ref.revision == ref.revision)
+    gaps: list[tuple[str, int, int, int]] = []
+    cursor = 0
+    for start, end in intervals:
+        if start > cursor:
+            gaps.append((ref.name, ref.revision, cursor, start))
+        cursor = max(cursor, end)
+    if cursor < size:
+        gaps.append((ref.name, ref.revision, cursor, size))
+    return tuple(gaps)
