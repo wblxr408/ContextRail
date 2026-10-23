@@ -23,6 +23,13 @@ class Compiler:
         integer(size)
         return size
 
+    def brief(self, scope: Scope, snapshot: str, session: str, *, budget: int,
+              requested: tuple[Ref, ...] = (), offset=0, limit=20, trace_offset=0, trace_limit=5) -> Packet:
+        from .layered import compile_brief
+        with self.store.read_transaction():
+            return compile_brief(self,scope,snapshot,session,budget=budget,requested=requested,
+                                 offset=offset,limit=limit,trace_offset=trace_offset,trace_limit=trace_limit)
+
     def compile(self, scope: Scope, snapshot: str, session: str, *, budget: int,
                 requested: tuple[Ref, ...] = (), layout: CacheLayout | None = None,
                 index: IndexPolicy | None = None) -> Packet:

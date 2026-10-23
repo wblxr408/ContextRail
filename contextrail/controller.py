@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .context import Compiler
 from .errors import BudgetExceeded, InvalidRequest
-from .models import CacheLayout, IndexPolicy, Packet, Ref, Scope, integer
+from .models import CacheLayout, IndexPolicy, Packet, Ref, Scope, integer,identifier
 
 
 _PHASES = frozenset({"explore", "locate", "modify", "verify", "handoff"})
@@ -28,8 +28,10 @@ class RequestBudget:
     output_reserve: int = 0
     tool_reserve: int = 0
     safety_reserve: int = 0
+    unit: str = 'utf8_bytes'
 
     def __post_init__(self) -> None:
+        identifier(self.unit)
         for value in (self.context_window, self.system_units, self.protocol_units, self.output_reserve,
                       self.tool_reserve, self.safety_reserve):
             integer(value)
@@ -68,6 +70,8 @@ class ContextController:
             raise InvalidRequest("Context controller requires a snapshot and session.")
         if not isinstance(index, IndexPolicy):
             raise InvalidRequest("Context controller requires an IndexPolicy.")
+        if budget.unit!=compiler.unit:
+            raise InvalidRequest('Request budget unit differs from the explicit compiler measurement unit')
         self.compiler, self.scope, self.snapshot, self.session = compiler, scope, snapshot, session
         self.budget, self.cache_key, self.index = budget, cache_key, index
         state = compiler.store.load_snapshot(scope, snapshot)

@@ -140,9 +140,16 @@ CREATE TABLE task_state_items (
 );
 CREATE INDEX task_state_items_scope_status ON task_state_items(scope,status,created_at);
 """
+SCHEMA_V7 = """
+CREATE TABLE evidence_index_state (
+ scope TEXT NOT NULL REFERENCES tasks(scope), name TEXT NOT NULL, revision INTEGER NOT NULL,
+ source_sha256 TEXT NOT NULL, indexer TEXT NOT NULL, status TEXT NOT NULL,
+ reason TEXT NOT NULL, spans INTEGER NOT NULL, PRIMARY KEY(scope,name)
+);
+"""
 APPLICATION_ID = 0x43524C31
-CORE_SCHEMA_VERSION = 6
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6})
+CORE_SCHEMA_VERSION = 10
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
 # Snapshot body schemas this build can read.  v2 adds selection_groups; a body
 # whose schema is not listed here is refused by load_snapshot rather than
 # silently degraded to individual selections.
@@ -168,6 +175,13 @@ class Store:
                     self._apply_schema(SCHEMA_V4)
                     self._apply_schema(SCHEMA_V5)
                     self._apply_schema(SCHEMA_V6)
+                    self._apply_schema(SCHEMA_V7)
+                    from .directory_sync import SCHEMA_V8
+                    self._apply_schema(SCHEMA_V8)
+                    from .timeline import SCHEMA_V9
+                    self._apply_schema(SCHEMA_V9)
+                    from .accounting import SCHEMA_V10
+                    self._apply_schema(SCHEMA_V10)
                     self.db.execute(f"PRAGMA user_version={CORE_SCHEMA_VERSION}")
                     self.db.execute(f"PRAGMA application_id={APPLICATION_ID}")
                 elif application_id != APPLICATION_ID:
@@ -183,10 +197,44 @@ class Store:
                         self._apply_schema(SCHEMA_V5)
                     if version < 6:
                         self._apply_schema(SCHEMA_V6)
+                    if version < 7:
+                        self._apply_schema(SCHEMA_V7)
+                    if version < 8:
+                        from .directory_sync import SCHEMA_V8
+                        self._apply_schema(SCHEMA_V8)
+                    if version < 9:
+                        from .timeline import SCHEMA_V9
+                        self._apply_schema(SCHEMA_V9)
+                    if version < 10:
+                        from .accounting import SCHEMA_V10
+                        self._apply_schema(SCHEMA_V10)
                     self.db.execute(f"PRAGMA user_version={CORE_SCHEMA_VERSION}")
+                from .indexing import initialize
+                initialize(self)
+                from .timeline import initialize as initialize_timeline
+                initialize_timeline(self)
         except Exception:
             self.db.close()
             raise
+
+    @classmethod
+    def open_readonly(cls, path: str | Path, *, clock: Callable[[], float] = time.time) -> "Store":
+        """Open an already initialized current database without migrations/writes."""
+        reader = cls.__new__(cls)
+        reader.clock = clock
+        reader.db = sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True, timeout=10, isolation_level=None)
+        reader.db.row_factory = sqlite3.Row
+        try:
+            reader.db.execute("PRAGMA query_only=ON")
+            version = reader.db.execute("PRAGMA user_version").fetchone()[0]
+            application = reader.db.execute("PRAGMA application_id").fetchone()[0]
+            if application != APPLICATION_ID or version != CORE_SCHEMA_VERSION:
+                raise Conflict("Read workers require an existing current ContextRail database; no migration was attempted.")
+            reader.fts_available = reader.db.execute("SELECT 1 FROM sqlite_master WHERE name='evidence_fts'").fetchone() is not None
+        except BaseException:
+            reader.db.close()
+            raise
+        return reader
 
     def _apply_schema(self, schema: str) -> None:
         # Executed statement-by-statement (not sqlite3.executescript) on purpose:
@@ -334,6 +382,18 @@ class Store:
         if existing and (existing["provider"] != target.provider or existing["model"] != target.model):
             raise Conflict("Session identity cannot be rebound to another model.")
 
+    def register_reader(self, scope: Scope, lease: Lease, target: Target) -> None:
+        """Trusted owner admits a session; writes still require the current owner lease."""
+        if not isinstance(target, Target):
+            raise InvalidRequest("Expected a reader target.")
+        with self.transaction():
+            self._lease(scope, lease)
+            self.permit_target(scope, target)
+            present = self.db.execute("SELECT 1 FROM sessions WHERE scope=? AND id=?", (scope.key, target.session)).fetchone()
+            self._register(scope, target)
+            if not present:
+                self._event(scope, "session.reader_registered", session=target.session)
+
     def record_routing_decision(self, scope: Scope, *, purpose: str, target: Target,
                                 reason: str, estimated_input_units: int) -> None:
         """Audit a policy result without changing ownership or opening a session."""
@@ -356,6 +416,26 @@ class Store:
 
     def put(self, scope: Scope, lease: Lease, name: str, content: bytes, *, expected_revision: int,
             media_type: str = "text/plain; charset=utf-8", expires_at: float | None = None) -> Ref:
+        with self.transaction():
+            self._lease(scope, lease)
+            return self._put(scope, name, content, expected_revision=expected_revision,
+                             media_type=media_type, expires_at=expires_at)
+
+    def put_many(self, scope: Scope, lease: Lease, artifacts: list[dict]) -> tuple[Ref, ...]:
+        """Publish a related set atomically, with the same fencing as individual puts."""
+        if not isinstance(artifacts, list) or not artifacts:
+            raise InvalidRequest("Expected a nonempty artifact batch.")
+        allowed = {"name", "content", "expected_revision", "media_type", "expires_at"}
+        for item in artifacts:
+            if not isinstance(item, dict) or not {"name", "content", "expected_revision"} <= item.keys() or item.keys() - allowed:
+                raise InvalidRequest("Invalid artifact batch entry.")
+        with self.transaction():
+            self._lease(scope, lease)
+            return tuple(self._put(scope, **item) for item in artifacts)
+
+    def _put(self, scope: Scope, name: str, content: bytes, *, expected_revision: int,
+             media_type: str = "text/plain; charset=utf-8", expires_at: float | None = None) -> Ref:
+        """Write within the caller's transaction; never use without lease fencing."""
         identifier(name)
         identifier(media_type)
         integer(expected_revision)
@@ -365,19 +445,21 @@ class Store:
                                        or expires_at <= self.clock()):
             raise InvalidRequest("Expiry must be a finite future timestamp.")
         sha = digest(content)
-        with self.transaction():
-            self._lease(scope, lease)
-            current = self.db.execute("SELECT revision FROM heads WHERE scope=? AND name=?", (scope.key, name)).fetchone()
-            if (current[0] if current else 0) != expected_revision:
-                raise Conflict("Artifact head changed; reload before writing.")
-            revision = expected_revision + 1
-            self.db.execute("INSERT OR IGNORE INTO blobs VALUES(?,?,?)", (scope.key, sha, content))
-            self.db.execute("INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,0)",
-                            (scope.key, name, revision, sha, len(content), media_type, expires_at))
-            self.db.execute("INSERT INTO heads VALUES(?,?,?) ON CONFLICT(scope,name) DO UPDATE SET revision=excluded.revision",
-                            (scope.key, name, revision))
-            self.db.execute("UPDATE tasks SET version=version+1 WHERE scope=?", (scope.key,))
-            self._event(scope, "artifact.created", revision=revision, bytes=len(content))
+        current = self.db.execute("SELECT revision FROM heads WHERE scope=? AND name=?", (scope.key, name)).fetchone()
+        if (current[0] if current else 0) != expected_revision:
+            raise Conflict("Artifact head changed; reload before writing.")
+        revision = expected_revision + 1
+        self.db.execute("INSERT OR IGNORE INTO blobs VALUES(?,?,?)", (scope.key, sha, content))
+        self.db.execute("INSERT INTO artifacts VALUES(?,?,?,?,?,?,?,0)",
+                        (scope.key, name, revision, sha, len(content), media_type, expires_at))
+        self.db.execute("INSERT INTO heads VALUES(?,?,?) ON CONFLICT(scope,name) DO UPDATE SET revision=excluded.revision",
+                        (scope.key, name, revision))
+        from .indexing import update
+        update(self, scope.key, name, revision, sha, content, media_type)
+        from .timeline import update as update_timeline
+        update_timeline(self,scope,name,revision,content)
+        self.db.execute("UPDATE tasks SET version=version+1 WHERE scope=?", (scope.key,))
+        self._event(scope, "artifact.created", revision=revision, bytes=len(content))
         return Ref(name, revision)
 
     def get(self, scope: Scope, ref: Ref) -> Artifact:
@@ -418,6 +500,19 @@ class Store:
                     break
         return results
 
+    def search_indexed(self, scope: Scope, query: str, **options) -> dict:
+        from .indexing import search
+        return search(self, scope, query, **options)
+
+    def index_status(self, scope: Scope) -> dict:
+        from .indexing import status
+        with self.read_transaction():
+            return status(self, scope)
+
+    def rebuild_index(self, scope: Scope, lease: Lease) -> dict:
+        from .indexing import rebuild
+        return rebuild(self, scope, lease)
+
     def current_refs(self, scope: Scope, *, limit: int = 10_000) -> list[Ref]:
         """Return readable current artifact heads in a stable order.
 
@@ -452,12 +547,18 @@ class Store:
     def invalidate(self, scope: Scope, lease: Lease, ref: Ref) -> None:
         with self.transaction():
             self._lease(scope, lease)
-            changed = self.db.execute("UPDATE artifacts SET invalidated=1 WHERE scope=? AND name=? AND revision=? AND invalidated=0",
-                                      (scope.key, ref.name, ref.revision)).rowcount
-            if not changed:
-                raise NotFound("Active artifact revision not found.")
-            self.db.execute("UPDATE tasks SET version=version+1 WHERE scope=?", (scope.key,))
-            self._event(scope, "artifact.invalidated")
+            self._invalidate(scope, ref)
+
+    def _invalidate(self, scope: Scope, ref: Ref) -> None:
+        """Invalidate inside an already lease-fenced owner transaction."""
+        changed = self.db.execute("UPDATE artifacts SET invalidated=1 WHERE scope=? AND name=? AND revision=? AND invalidated=0",
+                                  (scope.key, ref.name, ref.revision)).rowcount
+        if not changed:
+            raise NotFound("Active artifact revision not found.")
+        from .indexing import invalidate
+        invalidate(self, scope.key, ref.name, ref.revision)
+        self.db.execute("UPDATE tasks SET version=version+1 WHERE scope=?", (scope.key,))
+        self._event(scope, "artifact.invalidated")
 
     def purge(self, scope: Scope) -> int:
         """Reclaim unreferenced/expired payloads, retaining version tombstones.
@@ -469,11 +570,50 @@ class Store:
             count = self.db.execute("DELETE FROM blobs WHERE scope=? AND NOT EXISTS (SELECT 1 FROM artifacts a "
                                     "WHERE a.scope=blobs.scope AND a.sha256=blobs.sha256 AND a.invalidated=0 "
                                     "AND (a.expires IS NULL OR a.expires>?))", (scope.key, self.clock())).rowcount
+            from .indexing import purge
+            purge(self, scope.key)
             self._event(scope, "artifacts.purged", count=count)
         return count
 
     def snapshot(self, scope: Scope, lease: Lease, selections: tuple[Selection, ...],
                  *, groups: tuple[SelectionGroup, ...] = ()) -> str:
+        with self.transaction():
+            return self._snapshot(scope, lease, selections, groups=groups)
+
+    def publish_context(self, scope: Scope, lease: Lease, artifacts: list[dict],
+                        selections: tuple[Selection, ...], *, objective: str,
+                        constraints: tuple[str, ...], acceptance: tuple[str, ...],
+                        expected_version: int, source_ref: Ref) -> str:
+        """Atomically publish a derived context and its source-bound navigation record."""
+        integer(expected_version)
+        if not isinstance(objective, str) or not objective.strip():
+            raise InvalidRequest("Objective must be nonempty.")
+        unicode_text(objective)
+        constraints_json = canonical(self._text_list(constraints))
+        acceptance_json = canonical(self._text_list(acceptance))
+        if not isinstance(source_ref, Ref) or not isinstance(artifacts, list) or not artifacts:
+            raise InvalidRequest("A publication requires source evidence and artifacts.")
+        allowed = {"name", "content", "expected_revision", "media_type", "expires_at"}
+        for item in artifacts:
+            if not isinstance(item, dict) or not {"name", "content", "expected_revision"} <= item.keys() or item.keys() - allowed:
+                raise InvalidRequest("Invalid publication artifact.")
+        with self.transaction():
+            task = self._lease(scope, lease)
+            if task["version"] != expected_version:
+                raise Conflict("Task changed while source context was being prepared; retry from current state.")
+            self.db.execute("UPDATE tasks SET objective=?,constraints_json=?,acceptance_json=?,version=version+1 WHERE scope=?",
+                            (objective, constraints_json, acceptance_json, scope.key))
+            self._event(scope, "task.updated", source="derived_context")
+            for item in artifacts:
+                self._put(scope, **item)
+            self.get(scope, source_ref)
+            sid = self._snapshot(scope, lease, selections)
+            self._event(scope, "context.published", snapshot=sid, source_ref=asdict(source_ref))
+        return sid
+
+    def _snapshot(self, scope: Scope, lease: Lease, selections: tuple[Selection, ...],
+                  *, groups: tuple[SelectionGroup, ...] = ()) -> str:
+        """Capture inside the caller's write transaction."""
         if not isinstance(selections, (tuple, list)) or any(not isinstance(s, Selection) for s in selections):
             raise InvalidRequest("Expected evidence selections.")
         if len({s.ref for s in selections}) != len(selections):
@@ -489,32 +629,27 @@ class Store:
             missing = [ref for ref in group.members if ref not in selected_refs]
             if missing:
                 raise InvalidRequest("Selection group references evidence outside the snapshot.")
-        with self.transaction():
-            task = self._lease(scope, lease)
-            evidence = []
-            for selection in selections:
-                artifact = self.get(scope, selection.ref)
-                if selection.current:
-                    self._check_head(scope, selection.ref)
-                evidence.append({**asdict(selection), "sha256": artifact.sha256})
-            task_state = [asdict(item) for item in self.task_state(scope)]
-            body_map = {"schema": "contextrail.snapshot/v1", "scope": asdict(scope),
-                        "version": task["version"], "objective": task["objective"],
-                        "constraints": json.loads(task["constraints_json"]),
-                        "acceptance": json.loads(task["acceptance_json"]), "task_state": task_state,
-                        "evidence": evidence}
-            if groups:
-                # Group semantics live in a v2 snapshot.  A reader that does not
-                # understand groups must refuse this snapshot rather than ignore
-                # the field and load members individually, so the schema tag is
-                # bumped only when groups are actually present.
-                body_map["schema"] = "contextrail.snapshot/v2"
-                body_map["selection_groups"] = [asdict(group) for group in groups]
-            body = canonical(body_map)
-            sid = uuid.uuid4().hex
-            self.db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",
-                            (scope.key, sid, task["version"], body, digest(body.encode("utf-8"))))
-            self._event(scope, "snapshot.created", snapshot=sid)
+        task = self._lease(scope, lease)
+        evidence = []
+        for selection in selections:
+            artifact = self.get(scope, selection.ref)
+            if selection.current:
+                self._check_head(scope, selection.ref)
+            evidence.append({**asdict(selection), "sha256": artifact.sha256})
+        task_state = [asdict(item) for item in self.task_state(scope)]
+        body_map = {"schema": "contextrail.snapshot/v1", "scope": asdict(scope),
+                    "version": task["version"], "objective": task["objective"],
+                    "constraints": json.loads(task["constraints_json"]),
+                    "acceptance": json.loads(task["acceptance_json"]), "task_state": task_state,
+                    "evidence": evidence}
+        if groups:
+            body_map["schema"] = "contextrail.snapshot/v2"
+            body_map["selection_groups"] = [asdict(group) for group in groups]
+        body = canonical(body_map)
+        sid = uuid.uuid4().hex
+        self.db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?)",
+                        (scope.key, sid, task["version"], body, digest(body.encode("utf-8"))))
+        self._event(scope, "snapshot.created", snapshot=sid)
         return sid
 
     def _check_head(self, scope: Scope, ref: Ref) -> None:
@@ -692,7 +827,8 @@ class Store:
                              cache_write_units: int | None = None, output_units: int | None = None,
                              latency_ms: int | None = None, request_id: str | None = None,
                              run_id: str | None = None, attempt: int = 1,
-                             model_revision: str | None = None, request_digest: str | None = None) -> RequestUsage:
+                             model_revision: str | None = None, request_digest: str | None = None,
+                             observation: dict | None = None) -> RequestUsage:
         """Record one provider request without converting absent usage to zero."""
         self._sha256(packet_sha256)
         identifier(snapshot)
@@ -709,6 +845,8 @@ class Store:
         if request_digest is not None:
             self._sha256(request_digest)
         usage_known = input_units is not None and output_units is not None
+        if observation is not None and (not isinstance(observation,dict) or len(canonical(observation).encode())>65536):
+            raise InvalidRequest('Request observation metadata exceeds its declared boundary')
         with self.transaction():
             target = self.session(scope, session)
             # A request already happened; the version may have advanced since the
@@ -723,12 +861,14 @@ class Store:
                 self.db.execute(
                     "INSERT INTO request_usage(scope,id,session,provider,model,model_revision,request_id,run_id,"
                     "attempt,packet_sha256,snapshot,unit,input_units,cached_input_units,cache_write_units,"
-                    "output_units,latency_ms,usage_known,at,request_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "output_units,latency_ms,usage_known,at,request_digest,observation_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (scope.key, usage_id, session, target.provider, target.model, model_revision, request_id,
                      run_id, attempt, packet_sha256, snapshot, unit, input_units, cached_input_units,
-                     cache_write_units, output_units, latency_ms, int(usage_known), at, request_digest),
+                     cache_write_units, output_units, latency_ms, int(usage_known), at, request_digest,canonical(observation) if observation is not None else None),
                 )
             except sqlite3.IntegrityError as exc:
+                if observation is not None and observation.get('id') is not None:
+                    raise Conflict('Host observation ID was already recorded or attribution is invalid.') from exc
                 if request_id is not None:
                     raise Conflict("Provider request ID was already recorded for this scope.") from exc
                 raise

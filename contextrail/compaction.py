@@ -1,6 +1,6 @@
 """Snapshot-bound compaction lifecycle; hosts provide the actual model call."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass,asdict
 from typing import Callable
 
 from .errors import InvalidRequest
@@ -87,6 +87,23 @@ class CompactionLifecycle:
         if not isinstance(estimate, CompactionEstimate):
             raise InvalidRequest("Expected a compaction estimate.")
         return estimate.worthwhile
+
+    def begin_if_efficient(self,scope: Scope,lease: Lease,snapshot: str,proposal: dict) -> dict:
+        """Explicit host action: keep current, or prepare the original lifecycle.
+
+        This never generates text. Existing manual begin remains an explicit
+        host override; no model-facing tool can invoke this mutating entry.
+        """
+        from .accounting import efficiency
+        if not isinstance(proposal,dict) or proposal.get('action')!='compaction':
+            raise InvalidRequest('Compaction preparation needs a compaction proposal')
+        advice=efficiency(**proposal)
+        if advice['decision']!='consider':
+            with self.store.read_transaction():
+                self.store._lease(scope,lease);self.store.load_snapshot(scope,snapshot)
+            return {'status':'kept_current','snapshot':snapshot,'advice':advice,'compaction':None}
+        prepared=self.begin(scope,lease,snapshot,reason='efficiency-'+proposal['trigger'])
+        return {'status':'prepared','snapshot':snapshot,'advice':advice,'compaction':asdict(prepared)}
 
     def complete(self, scope: Scope, lease: Lease, compaction_id: str, *, title: str,
                  text: str, spans: tuple[Ref, ...]) -> Summary:

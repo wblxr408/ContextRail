@@ -1,0 +1,26 @@
+# Copy to .contextrail.toml in your own workspace. All paths anchor at this file.
+[project]
+# id = "my-personal-project" # Optional; default uses local repository identity.
+workspace = "."
+task = "default"
+tenant = "local"
+
+[storage]
+path = ".context-rail/state.sqlite3"
+
+[capture]
+ignore = [".git/**", ".context-rail/**", ".secret.*", "private/**"]
+
+[context]
+required = [] # Declared materials; automatic loading is a later integration.
+response_bytes = 4096
+read_bytes = 65536
+
+[directory]
+include = [] # Empty selects all regular files in the explicitly chosen root.
+exclude = ["private/**"]
+respect_gitignore = true
+max_files = 32
+max_depth = 6
+max_file_bytes = 1048576
+max_directory_entries = 20000

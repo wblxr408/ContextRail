@@ -9,6 +9,9 @@ dist/
 .venv/
 .agent-venv/
 .eval-venv/
+.benchmark-venvs/
+.datasets/
+research/topic-b-poisoned-handoff/generated/
 
 # ── Runtime / generated data ──
 .context-rail/
@@ -27,3 +30,6 @@ scripts/
 evaluation-config/
 evaluation-runs/
 tmp/
+
+# Local native-client acceptance transcripts and credentials-adjacent diagnostics.
+.artifact-work/native-client-acceptance-*/

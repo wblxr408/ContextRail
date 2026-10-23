@@ -28,6 +28,14 @@ class CacheLayoutPolicy:
         return compiler.compile(scope, snapshot, session, budget=budget, requested=requested,
                                 layout=self.layout, index=self.index)
 
+    def compile_if_efficient(self,compiler: Compiler,scope: Scope,snapshot: str,session: str,*,budget: int,proposal: dict,requested: tuple=()) -> dict:
+        """Opt-in host layout choice; provider cache behavior remains unknown."""
+        from .accounting import efficiency
+        if not isinstance(proposal,dict) or proposal.get('action')!='cache':raise InvalidRequest('Cache layout requires a cache proposal')
+        advice=efficiency(**proposal);apply=advice['decision']=='consider'
+        packet=self.compile(compiler,scope,snapshot,session,budget=budget,requested=requested) if apply else compiler.compile(scope,snapshot,session,budget=budget,requested=requested,index=self.index)
+        return {'packet':packet,'advice':advice,'cache_layout_applied':apply,'provider_cache_hit':'unknown'}
+
 
 class UsageLedger:
     """Persist host-reported usage against a verified compiled packet."""
@@ -58,7 +66,7 @@ class UsageLedger:
                        cache_write_units: int | None = None, output_units: int | None = None,
                        latency_ms: int | None = None, request_id: str | None = None,
                        run_id: str | None = None, attempt: int = 1,
-                       model_revision: str | None = None, request_digest: str | None = None):
+                       model_revision: str | None = None, request_digest: str | None = None, observation: dict | None = None):
         """Persist a request-granular observation, preserving missing usage."""
         if not isinstance(packet, Packet):
             raise InvalidRequest("Usage must be associated with a compiled packet.")
@@ -72,7 +80,7 @@ class UsageLedger:
             input_units=input_units, cached_input_units=cached_input_units,
             cache_write_units=cache_write_units, output_units=output_units, latency_ms=latency_ms,
             request_id=request_id, run_id=run_id, attempt=attempt, model_revision=model_revision,
-            request_digest=request_digest,
+            request_digest=request_digest, observation=observation,
         )
 
 

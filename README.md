@@ -1,10 +1,34 @@
 # ContextRail
 
+采集脱敏与独立原文投影见[CAPTURE_USE.md](CAPTURE_USE.md)，固定上游适配及许可证见[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+来源事件去重、旧队列映射与冲突诊断见[EVENT_IDENTITY_USE.md](EVENT_IDENTITY_USE.md)。
+
+无final请求恢复、工具事件和显式任务导入见[NATIVE_EVENTS_USE.md](NATIVE_EVENTS_USE.md)。
+
+分层简报、逐来源遗漏、加载解释及新STATE导出见[BRIEF_USE.md](BRIEF_USE.md)。显式`brief`/`explain`先覆盖可选材料入口，再按余量装配正文，并保留要求与原文引用。
+
+最终请求观测、持久工具回读计量和事件触发收益建议见[ACCOUNTING_USE.md](ACCOUNTING_USE.md)。`metrics`保留来源/单位/未知，`efficiency`只给显式成本估计，不发起模型调用。
+
 面向现有 Agent 的轻量上下文基础层：保留版本化原始证据、编译按预算加载的工作集，并在不同模型会话之间进行可校验交接。核心目标是让 Agent/模型切换时的上下文重建成本尽量低、且不把上一段会话的推理轨迹当作事实继承下来。
 
-当前为 **0.1 基础架构 + 本地评测脚手架**。核心使用 Python 3.11+ 与 SQLite，提供 Python SDK、只读工具挂载接口和本地 JSON-lines 传输；`contextrail.evaluation` 提供一套 A/B/C 上下文策略的离线/API 评测框架。可选的 `oidc` extra 提供 OIDC Resource Server/membership adapter；默认插件不拥有 IAM。模型调用、登录、组织授权和工具执行由接入方负责。
+当前为 **0.1 基础架构 + 本地评测脚手架**。核心使用 Python 3.11+ 与 SQLite，提供 Python SDK、只读工具挂载接口、本地 JSON-lines 传输，以及可选的 MCP stdio adapter；`contextrail.evaluation` 提供一套 A/B/C 上下文策略的离线/API 评测框架。可选的 `oidc` extra 提供 OIDC Resource Server/membership adapter；默认插件不拥有 IAM。模型调用、登录、组织授权和工具执行由接入方负责。
 
-> **诚实边界（先读这一条）**：核心确定性协议已被 88 项本地测试覆盖并通过。评测框架的采集链路已在 **fixture 模型**下跑通，但 **从未对真实 provider API 跑过端到端评测**，`evaluation-runs/` 目前为空。因此本项目 **尚无任何关于 token、费用、延迟或任务正确率的真实收益结论**。所有此类数字都待按 [工程测评计划](docs/engineering-evaluation-plan.md) 执行后才能声称。
+自用第一批已增加项目配置、worktree 身份、宿主工具结果接收、原文持久化及有界展示。安装 `.[mcp]` 后可通过真实 MCP 回读证据；初始化、采集和接线步骤见 [自用指南](SELF_USE.md)。
+
+持续实现已接通 Bridge 要求的单向导出与必需工作集：保存精确 R ID/revision/原文，复用原校验器与逐条回执，并拒绝把源已变化的旧导出当当前任务。终端新增 status/checkpoints/search/continue/explain，可复制精确恢复参数。见 [Bridge 接线指南](BRIDGE_USE.md)。
+
+Codex / Claude 项目接线新增只读任务包、显式 reader、原生 Hook 组合与独立开关，复用既有 main 记忆服务。配置、数据库和源码位置，以及两端激活与实际验收的边界见 [本机客户端指南](NATIVE_CLIENTS.md)。
+
+已保存输出可通过 `context.extract` / `extract-result` 提取日志错误、JSON Pointer、CSV 统计和 Git -z 字段。每项结果保留原文跨度，并区分无匹配、解析失败与展示省略。见 [提取指南](EXTRACTION_USE.md)。
+
+独立读取与提取可用 `context.batch` / `batch-read` 在有限并发下处理，按输入顺序保留每项结果和失败，完整输出受字节预算约束。见 [批量读取指南](BATCH_USE.md)。
+
+任务证据新增可重建的 FTS5/BM25 索引，按当前revision/字节跨度返回候选，旧库待回填、排除与未索引范围可见。重建不改任务或快照；见 [索引指南](INDEX_USE.md)。
+
+capture-result 可加 --intent 优先返回该次stdout/stderr中的相关段落，未命中后可用 context.result_search 换词或读原文，执行失败状态始终保留。见 [意图检索指南](INTENT_USE.md)。
+
+核心确定性协议在最初版本有 88 项通过记录；新增功能的实际验收分别记录在 `openspec/changes/*/verification.md`，没有重新运行全部旧套件。评测框架的采集链路在 fixture 模型下跑通；当前原生客户端、工具回读与 usage 来源已有本机观测，仍缺成对 provider 最终请求与账单对照，尚无费用或整体输入削减的实测收益结论。
 
 ## 快速验证
 
@@ -43,7 +67,8 @@ python -m pip install --no-build-isolation --no-deps .
 | Context Controller | `ContextController` + `RequestBudget`：为宿主逐轮编译可变证据槽，先从 context window 扣除 system/tool/output/safety reserve，再填工作集；不假设模型记得上一轮请求 |
 | Handoff | 准备、编译、送达确认、校验、激活、取消；交接写冻结；session + epoch 租约；旧会话写入拒绝（epoch fencing） |
 | Action ledger | 唯一动作 ID 的预留与终态；未完成动作阻止交接；重复预留返回 false |
-| Host mount | Python `ContextTools`；绑定单一 scope/session 的 `context.get`、`context.search`、`context.list`、`context.summary_*`；受限本地 JSON-lines 接口 |
+| Host mount | Python `ContextTools`；绑定单一 scope/session 的 `context.get`、`context.search`、`context.list`、`context.summary_*`；受限本地 JSON-lines 接口；可选真实 MCP stdio 及能力报告 |
+| Self-use output loop | `.contextrail.toml` 配置与 repo/worktree 身份；接收宿主观察结果、stdout/stderr/信封原子保存、重送幂等、有界 JSON 预览、精确回读与工具语义分类 |
 | Compaction | `CompactionLifecycle`：snapshot 绑定的摘要生命周期，提交时校验 span 边界与原文可用性；不调用任何模型 |
 | Usage / Policy | `UsageLedger`（aggregate 与 request-level 两套账本）、`CacheLayoutPolicy`、provider-neutral `ModelPolicyProvider` 路由契约（记录决策，不自动执行切换） |
 | Evaluation harness | `contextrail.evaluation`：A/B/C 上下文策略对照、12 个确定性压力任务、SWE-bench Verified manifest、配对 bootstrap CI 与非劣决策、PriceBook 计费、本地 dashboard |
@@ -169,7 +194,7 @@ python -m contextrail serve --store rail.sqlite3 --tenant local --project sample
 
 工件写入由可信宿主通过 SDK 完成，stdio 工具不接受 scope、文件系统路径、SQL 或模型 provider 覆盖，也不开放写入/执行工具。`serve` 的 scope/session 由启动它的宿主绑定；请求 ID 只用于响应关联。
 
-**这是 ContextRail 自己的 JSON-lines 接口，不是 MCP server。** 对 MCP、OpenCode、pi、Claude Code、Codex 等的专用适配尚未实现；不能据此宣称这些宿主已接入或已减少出站历史。
+`serve` 是 ContextRail 自己的 JSON-lines 接口；真实 MCP 使用 `mcp` 子命令及可选官方 SDK，见 [自用指南](SELF_USE.md)。Codex / Claude Code 的本机配置、任务包与原文回读已有实际验收，逐端 Hook 范围见 [原生客户端指南](NATIVE_CLIENTS.md)。客户端接线不代表已减少其最终出站历史；OpenCode、pi 尚未专门接入。
 
 ## 项目结构
 
@@ -185,6 +210,12 @@ contextrail/
   compaction.py   snapshot 绑定的摘要生命周期（不调用模型）
   policy.py       缓存布局、aggregate/request-level usage 账本、路由契约
   host.py         绑定任务的只读工具入口
+  project.py      项目 TOML、显式覆盖及本机 repo/worktree 身份
+  bridge.py       Bridge 要求单向导出、来源新鲜度、固定工作集及逐项回执
+  navigation.py   只读任务状态、分页快照、搜索与精确恢复入口
+  tool_results.py 宿主结果接收、原子保存、状态分类和有界 JSON 展示
+  capabilities.py 宿主能力证据与 unknown 降级
+  mcp_server.py   可选官方 MCP stdio adapter
   auth.py         可选 OIDC 授权（membership/角色）
   oidc_adapter.py 可选 OIDC Resource Server 适配
   cli.py          初始化、演示、stdio 传输
@@ -214,6 +245,10 @@ SDK 的原始 `Store` 和 `ContextTools` 是可信宿主组件；外部网络请
 
 ## 文档
 
+- [自用配置、结果采集与 MCP 回读](SELF_USE.md)
+- [Bridge 要求导出、必需工作集与接收回执](BRIDGE_USE.md)
+- [有界目录导入、增量版本与显式记忆队列](DIRECTORY_USE.md)
+- [命中上下文窗口、行号与精确原文锚点](HIT_WINDOWS_USE.md)
 - [基础架构说明](docs/architecture.md)
 - [实现细节清单](docs/implementation-inventory.md)
 - [插件范围审计](docs/plugin-scope-audit.md)

@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+mcp = ["mcp>=1.28,<2"]
 oidc = ["PyJWT[crypto]>=2.10,<3"]
 eval = ["inspect-ai==0.3.10", "openai>=3,<4"]
 swebench = ["swebench==5.0.2"]
@@ -21,6 +22,9 @@ contextrail-eval = "contextrail.evaluation.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["contextrail*"]
+
+[tool.setuptools.package-data]
+"contextrail._vendor" = ["*_LICENSE.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
