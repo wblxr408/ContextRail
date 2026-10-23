@@ -20,6 +20,8 @@
 
 项目full/metadata_only/skip贯通原M持久化边界，原库delivery逐项确认、共享judge/index退避、显式取消和源代/轮换恢复已接线。本阶段16项集中验收通过，具体缺口定点修复；累计20个当前消费者有对应GREEN记录。受控本机链路、取消与实际指南回读见[阶段验收](openspec/changes/resilient-capture-delivery/verification.md)。
 
+已上传模块：[88aa8fb2](https://github.com/wblxr408/ContextRail/commit/88aa8fb2670c93624ec52db770b2a3bc854b10fd)，origin/main；GitHub精确回读确认。
+
 ## 下一阶段
 
 继续D03 / D04 / D06：关键字面证据、摘要提交校验和来源变更后的派生页更新；沿用整阶段验收后提交上传的约定。

@@ -38,4 +38,4 @@ CAPTURE_DELIVERY_USE.md已保存到原任务guide revision2，fact/task version1
 
 既有Codex reader的官方MCP精确回读5525 bytes指南，当前Bridge source_current=true。备份.context-rail/backups/before-capture-guide-20261023T141144393246Z.sqlite3；完整机器证据capture-delivery-live-receipt.json complete=true及rail字段。第一次guide revision1/snapshot6939a0406afc444d86679edabd893d09是历史状态。
 
-最终wheel构建与严格OpenSpec校验通过，构建日志保存在本机.context-rail/capture-delivery-final-build.log；未发布dist或改变用户既有evaluation/research改动。diff格式检查及模块独立提交上传在交付收尾记录。
+最终wheel构建、严格OpenSpec与git diff --cached --check通过，构建日志保存在本机.context-rail/capture-delivery-final-build.log；未发布dist或改变用户既有evaluation/research改动。模块提交[88aa8fb2670c93624ec52db770b2a3bc854b10fd](https://github.com/wblxr408/ContextRail/commit/88aa8fb2670c93624ec52db770b2a3bc854b10fd)已推送origin/main，并通过GitHub连接器精确回读确认。
