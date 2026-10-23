@@ -2,6 +2,8 @@
 
 本地研究副本位于 `.context-rail/upstream/`，不作为 Python 运行依赖，也不运行其安装或后台脚本。
 
+F05–F08阅读并适配ai-memory同固定commit的`ai-memory-hooks/src/capture_policy.rs`和`ai-memory-cli/src/commands/hook_spool.rs`：以封闭元数据、已知工具直接字段及逐项durable ack为依据，实现Python项目规则与原M SQLite inbox。`capture_rules.py`标明MIT来源；使用fnmatch与本地限制，不复制上游glob代数、TTL/容量/重试次数丢事件、私有后台drain或完整Rust服务。源代和队列控制继续在原listener/数据库实现；context-mode的有界DB retry只作瞬态失败参照，不运行其后台或套件。
+
 E05/E06/I02实际阅读ai-memory固定`1bd866375b01031d63db54862a133376598d3701`的`ai-memory-store/src/ops.rs::accept_handoff_in_transaction`：借鉴领取时重查源状态/范围、显式CAS与候选/领取分离，接到原Rail handoff与events。没有复制Rust实现、默认SessionStart领取、同cwd最新候选或过期清理；Bridge要求/原文span与workspace writer继续各自原契约。context-mode快照只作经历/当前要求分层参照，不继承固定截断。
 
 D07/H03/D08适配context-mode同固定commit的`src/adapters/codex/usage.ts::parseCodexUsage`为`_vendor/context_mode_usage.py`（ELv2，MODIFIED）：保留last/cumulative及未知、不把reasoning额外加入output、不提供pricing或第二文件游标。使用原事件owner的真实来源ID/文件generation+offset；相同计数不是来源身份。`persist-tool-calls.ts`跨重连持久计数的接线思路用于原R events，不复制其latest-session自动选择。所有差异在ACCOUNTING_USE.md说明。

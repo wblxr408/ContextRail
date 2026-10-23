@@ -24,6 +24,9 @@ from event_identity import SCHEMA as SOURCE_EVENT_SCHEMA, source_identity, admit
 from native_event_stream import SCHEMA as NATIVE_EVENT_SCHEMA, capture_record, list_events, read_event_range, native_timeline, reindex_timeline
 from capture_policy import SCHEMA as CAPTURE_SCHEMA, claim_owner, delegate_hook, capture_status
 from learning_origin import POLICY as ORIGIN_POLICY, project_candidate
+from capture_rules import learning_row
+import ingest_delivery
+import stream_cursor
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0,str(HERE/'vendor'))
@@ -136,6 +139,8 @@ class Store:
         self.db.executescript(SOURCE_EVENT_SCHEMA)
         self.db.executescript(NATIVE_EVENT_SCHEMA)
         self.db.executescript(CAPTURE_SCHEMA)
+        self.db.executescript(ingest_delivery.SCHEMA)
+        self.db.executescript(stream_cursor.SCHEMA)
 
     @staticmethod
     def event_workspace(value):
@@ -146,75 +151,47 @@ class Store:
         except OSError:
             return workspace_key(os.path.normpath(value))
 
-    def ingest(self, path, kind, baseline=False, history=False, stats=None):
-        path = Path(path)
-        key = require_safe_identity(str(canonical_path(path)))
-        cursor_key = 'backfill:'+key if history else key
-        row = self.db.execute('SELECT * FROM cursors WHERE path=?', (cursor_key,)).fetchone()
-        size = path.stat().st_size
-        if row is not None and row['offset'] == size:
-            return 0
-        if row is None and baseline:
-            # Existing history is not backfilled automatically.
-            with self.db:
-                self.db.execute('INSERT INTO cursors VALUES(?,?,?)', (cursor_key, size, '{}'))
-            return 0
-        offset = row['offset'] if row and row['offset'] <= size else 0
-        context = json.loads(row['context']) if row and row['offset'] <= size else {}
-        count = 0
-        with self.db, path.open('rb') as f:
-            self.db.execute('BEGIN IMMEDIATE')
-            stat=os.fstat(f.fileno())
-            generation={'device':stat.st_dev,'inode':stat.st_ino,'birth_ns':getattr(stat,'st_birthtime_ns',None)}
-            f.seek(offset)
-            for _ in range(1000):
-                start = f.tell()
-                line = f.readline(8 * 1024 * 1024)
-                if not line or not line.endswith(b'\n'):
-                    f.seek(start)
-                    break
-                try:
-                    record = json.loads(line)
-                    outcomes=capture_record(self.db,kind,record,context,key,start,f.tell(),generation,self.event_workspace)
-                    if stats is not None:
-                        stats['raw_events']=stats.get('raw_events',0)+outcomes.count('inserted')
-                    c = reduce_record(kind, record, context)
-                except (ValueError, TypeError, AttributeError):
-                    logging.warning('Malformed record skipped: %s:%s', path.name, start)
-                    continue
-                if not c or not c['final']:
-                    continue
-                since=self.db.execute("SELECT value FROM meta WHERE key='since'").fetchone()
-                if since and not history and record.get('timestamp'):
-                    try:
-                        if datetime.fromisoformat(record['timestamp'].replace('Z','+00:00')).timestamp()<float(since[0]):
-                            continue
-                    except (ValueError,TypeError):
-                        pass
-                c.update(kind=kind, source=key, offset=start, occurred_at=record.get('timestamp') or datetime.now().astimezone().isoformat())
-                require_safe_identity(context.get('session') or path.stem)
-                require_safe_identity(c['marker'])
-                processed=sanitize_capture(c,'memory')
-                c=processed.value
-                c['_capture']=processed.provenance()
-                legacy_id = digest(kind + (context.get('session') or path.stem) + c['marker'] + c['final'])
-                event=source_identity(kind+'/completed-turn',self.event_workspace(c.get('cwd')),
-                    context.get('session',''),c['marker'],key,start,generation)
-                event['workspace_resolution']='canonical_or_declared_if_unavailable' if c.get('cwd') else 'missing_workspace'
-                owner=claim_owner(self.db,event['coordinates']['workspace'],kind,context.get('session',''))
-                learning=project_candidate(c,event['id'])
-                c.update(_origin=learning['_origin'],producer='existing_jsonl_listener',capture_owner=owner)
-                state='queued' if learning['_origin']['eligible_for_learning'] and meaningful(learning['user'],learning['final']) else 'filtered'
-                admitted=admit_event(self.db,event,c,key,legacy_ids=(legacy_id,),state=state,
-                    available=time.time()+30,normalize_workspace=self.event_workspace)
-                inserted=int(admitted['outcome']=='inserted')
-                if admitted['outcome']!='inserted' and stats is not None:
-                    name=admitted['outcome'];stats[name]=stats.get(name,0)+1
-                count += inserted
-                if stats is not None and inserted:stats[state]=stats.get(state,0)+inserted
-            self.db.execute('INSERT OR REPLACE INTO cursors VALUES(?,?,?)',
-                            (cursor_key, f.tell(), json.dumps(sanitize_capture(context,'memory').value, ensure_ascii=False)))
-        return count
+    def ingest(self,path,kind,baseline=False,history=False,stats=None,*,line_bytes=8*1024*1024):
+        return stream_cursor.ingest(self,canonical_path(path),kind,baseline=baseline,history=history,stats=stats,line_bytes=line_bytes)
+
+    def ingest_rotated(self,source,destination,kind):
+        logical=canonical_path(Path(source).parent)/Path(source).name
+        return stream_cursor.ingest(self,canonical_path(destination),kind,logical_path=logical,rotated=True)
+
+    def stream_status(self,**options):return stream_cursor.status(self,**options)
+    def submit_deliveries(self,items):return ingest_delivery.submit(self,items)
+    def drain_deliveries(self,**options):return ingest_delivery.drain(self,**options)
+    def queue_status(self,workspace=None,**options):return ingest_delivery.status(self,workspace,**options)
+    def cancel_jobs(self,ids,reason):return ingest_delivery.cancel(self,ids,reason)
+
+    def _deliver_import(self,item):
+        from history_import import enqueue
+        return enqueue(self,item['source'],item['workspace'],item['event_key'],item['content'],item.get('occurred_at'),item['kind'])
+
+    def _ingest_record(self,kind,record,context,key,start,end,generation,history,stats):
+        outcomes=capture_record(self.db,kind,record,context,key,start,end,generation,self.event_workspace)
+        if stats is not None:stats['raw_events']=stats.get('raw_events',0)+outcomes.count('inserted')
+        c=reduce_record(kind,learning_row(kind,record,context),context)
+        if not c or not c['final']:return 0
+        since=self.db.execute("SELECT value FROM meta WHERE key='since'").fetchone()
+        if since and not history and record.get('timestamp'):
+            try:
+                if datetime.fromisoformat(record['timestamp'].replace('Z','+00:00')).timestamp()<float(since[0]):return 0
+            except (ValueError,TypeError):pass
+        c.update(kind=kind,source=key,offset=start,occurred_at=record.get('timestamp') or datetime.now().astimezone().isoformat())
+        require_safe_identity(context.get('session') or Path(key).stem);require_safe_identity(c['marker'])
+        processed=sanitize_capture(c,'memory');c=processed.value;c['_capture']=processed.provenance()
+        legacy_id=digest(kind+(context.get('session') or Path(key).stem)+c['marker']+c['final'])
+        event=source_identity(kind+'/completed-turn',self.event_workspace(c.get('cwd')),context.get('session',''),c['marker'],key,start,generation)
+        event['workspace_resolution']='canonical_or_declared_if_unavailable' if c.get('cwd') else 'missing_workspace'
+        owner=claim_owner(self.db,event['coordinates']['workspace'],kind,context.get('session',''))
+        learning=project_candidate(c,event['id']);c.update(_origin=learning['_origin'],producer='existing_jsonl_listener',capture_owner=owner)
+        state='queued' if learning['_origin']['eligible_for_learning'] and meaningful(learning['user'],learning['final']) else 'filtered'
+        admitted=admit_event(self.db,event,c,key,legacy_ids=(legacy_id,),state=state,available=time.time()+30,normalize_workspace=self.event_workspace)
+        inserted=int(admitted['outcome']=='inserted')
+        if stats is not None:
+            name=state if inserted else admitted['outcome'];stats[name]=stats.get(name,0)+1
+        return inserted
 
     def backfill(self,path,kind,stats=None):
         """Explicit replay uses a separate cursor and the same event identities and queue."""
@@ -408,7 +385,7 @@ def verify_files(config, files):
 class Service:
     def __init__(self, home, config):
         self.home=Path(home); self.config=config; self.store=Store(home)
-        self.lock=threading.Lock(); self.events=set(); self.wake=threading.Event()
+        self.lock=threading.Lock(); self.events=set(); self.moves=[]; self.wake=threading.Event()
         self.stop=threading.Event(); self.observer=None
         self.memory = runtime_from_config(config, home)
 
@@ -423,30 +400,55 @@ class Service:
                 if 'subagents' in path.parts: continue
                 try: count+=self.store.ingest(path,kind,baseline)
                 except (OSError,sqlite3.Error): logging.exception('Cannot ingest %s',path.name)
+        position=self.store.db.execute("SELECT value FROM meta WHERE key='alias_reconcile_offset'").fetchone()
+        offset=int(position[0]) if position else 0
+        aliases=self.store.db.execute('SELECT * FROM stream_aliases ORDER BY read_path LIMIT 32 OFFSET ?',(offset,)).fetchall()
+        for alias in aliases:
+            try:
+                if Path(alias['read_path']).is_file():count+=self.store.ingest_rotated(alias['logical_key'],alias['read_path'],alias['client'])
+            except (OSError,sqlite3.Error):logging.exception('Rotated source reconciliation deferred')
+        with self.store.db:self.store.db.execute("INSERT OR REPLACE INTO meta VALUES('alias_reconcile_offset',?)",(str(offset+len(aliases) if len(aliases)==32 else 0),))
         return count
 
     def changed(self,path):
-        if str(path).endswith('.jsonl'):
-            with self.lock: self.events.add(str(path))
-            self.wake.set()
+        with self.lock:self.events.add(str(path))
+        self.wake.set()
+
+    def moved(self,source,destination):
+        with self.lock:self.moves.append((str(source),str(destination)))
+        self.wake.set()
 
     def flush_events(self):
         with self.lock:
             events,self.events=self.events,set()
+            moves,self.moves=self.moves,[]
+        for source,destination in moves:
+            for kind,root in self.roots():
+                if Path(source).is_relative_to(root) and 'subagents' not in Path(source).parts and (source.endswith('.jsonl') or self.store.db.execute('SELECT 1 FROM stream_aliases WHERE read_path=?',(source,)).fetchone()):
+                    try:self.store.ingest_rotated(source,destination,kind)
+                    except (OSError,sqlite3.Error):logging.exception('Rotated source read deferred')
+                    break
         for name in events:
             path=Path(name)
+            alias=self.store.db.execute('SELECT * FROM stream_aliases WHERE read_path=?',(str(path.resolve()),)).fetchone()
+            if alias:
+                try:self.store.ingest_rotated(alias['logical_key'],path,alias['client'])
+                except (OSError,sqlite3.Error):logging.exception('Rotated source event deferred')
+                continue
             for kind,root in self.roots():
-                if path.is_relative_to(root) and 'subagents' not in path.parts and path.exists():
+                if path.suffix=='.jsonl' and path.is_relative_to(root) and 'subagents' not in path.parts and path.exists():
                     try: self.store.ingest(path,kind)
                     except (OSError,sqlite3.Error): logging.exception('Event ingestion failed')
                     break
 
     def process_one(self):
         db=self.store.db; now=time.time()
-        job=db.execute("SELECT * FROM jobs WHERE state IN ('queued','retry','ready_to_save','awaiting_index') AND available<=? ORDER BY (state='awaiting_index') DESC,(state='ready_to_save') DESC,created LIMIT 1",(now,)).fetchone()
+        pressure=ingest_delivery.backpressure(self.store,now)
+        job=db.execute("SELECT * FROM jobs WHERE state IN ('queued','retry','ready_to_save','awaiting_index') AND available<=? AND ((state IN ('queued','retry') AND ?=0) OR (state IN ('ready_to_save','awaiting_index') AND ?=0)) ORDER BY (state='awaiting_index') DESC,(state='ready_to_save') DESC,created LIMIT 1",(now,int(pressure['judge']['active']),int(pressure['index']['active']))).fetchone()
         if not job: return
         jid=job['id']; payload=json.loads(job['payload'])
         try:
+            if ingest_delivery.checkpoint(self.store,jid,'preparing'):return
             processed=sanitize_capture(payload,'memory')
             payload=processed.value
             payload['_capture']=processed.provenance()
@@ -475,6 +477,7 @@ class Service:
                 envelope=sanitize_capture(json.loads(job['result']),'memory').value
                 with db: db.execute('UPDATE jobs SET result=? WHERE id=?',(json.dumps(envelope,ensure_ascii=False),jid))
                 notes=validate_notes(envelope['judgment'],payload,envelope['existing'])
+                if ingest_delivery.checkpoint(self.store,jid,'saving'):return
                 files=save_notes(self.config,jid,payload,notes)
                 capture_claims(self.memory,jid,payload,notes)
                 with db:
@@ -486,6 +489,7 @@ class Service:
             try:
                 callid=reserve_call(db,self.config)
             except BudgetExceeded:
+                ingest_delivery.defer(self.store,jid,'model_budget_exhausted',300,shared_stage='judge')
                 return
             with db:
                 db.execute("UPDATE jobs SET state='processing',attempts=attempts+1 WHERE id=?",(jid,))
@@ -506,6 +510,7 @@ class Service:
             with db:
                 db.execute('UPDATE calls SET tokens=? WHERE id=?',(total or reserve,callid))
                 db.execute("UPDATE jobs SET result=?,state='ready_to_save' WHERE id=?",(json.dumps({'judgment':result,'existing':existing},ensure_ascii=False),jid))
+            if ingest_delivery.checkpoint(self.store,jid,'saving'):return
             notes=validate_notes(result,payload,existing)
             files=save_notes(self.config,jid,payload,notes)
             capture_claims(self.memory,jid,payload,notes)
@@ -522,6 +527,9 @@ class Service:
             with db:
                 db.execute('UPDATE jobs SET state=?,attempts=?,available=?,error=? WHERE id=?',
                     (state,attempt,time.time()+min(3600,300*attempt),clean(str(exc),1200),jid))
+            reason='index_unavailable' if job['state']=='awaiting_index' else 'resource_unavailable' if isinstance(exc,(TimeoutError,ConnectionError,OSError)) or any(s in str(exc).lower() for s in ('unavailable','queue deadline','queue budget','request timed out','model metadata','failed to refresh available models')) else 'evaluation_failed'
+            shared='index' if job['state'] in {'awaiting_index','ready_to_save'} else 'judge'
+            ingest_delivery.defer(self.store,jid,reason,min(3600,300*attempt),shared_stage=shared if reason in {'index_unavailable','resource_unavailable'} else None)
             logging.warning('Job %s %s: %s',jid[:12],state,clean(str(exc),300))
 
     def status(self):
@@ -529,6 +537,8 @@ class Service:
         return {'pid':os.getpid(),'updated':time.time(),'sources':[{'kind':k,'path':str(p),'exists':p.exists()} for k,p in self.roots()],
                 'native_observer':bool(self.observer and self.observer.is_alive()),
                 'jobs':dict(db.execute('SELECT state,count(*) FROM jobs GROUP BY state').fetchall()),
+                'capture_queue':self.store.queue_status(),
+                'source_streams':self.store.stream_status(),
                 'calls_24h':db.execute('SELECT count(*) FROM calls WHERE started>?',(time.time()-86400,)).fetchone()[0],
                 'tokens_24h':db.execute('SELECT coalesce(sum(tokens),0) FROM calls WHERE started>?',(time.time()-86400,)).fetchone()[0]}
 
@@ -539,7 +549,7 @@ class Service:
         class Handler(FileSystemEventHandler):
             def on_modified(self,e): service.changed(e.src_path)
             def on_created(self,e): service.changed(e.src_path)
-            def on_moved(self,e): service.changed(e.dest_path)
+            def on_moved(self,e):service.moved(e.src_path,e.dest_path);service.changed(e.dest_path)
         self.observer=Observer()
         for _,root in self.roots():
             if root.exists(): self.observer.schedule(Handler(),str(root),recursive=True)
@@ -567,6 +577,7 @@ class Service:
             while not (self.home/'stop').exists():
                 self.wake.wait(2); self.wake.clear()
                 self.flush_events()
+                self.store.drain_deliveries(limit=4)
                 if time.monotonic()>=next_scan:
                     self.discover(); next_scan=time.monotonic()+self.config['reconcile_seconds']
                     if self.config.get('checkpoint_lifecycle_enabled'):
@@ -587,7 +598,7 @@ class Service:
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['watch','status','stop','scan','events','stream','stream-get','capture-hook','capture-status','timeline','timeline-reindex'])
+    parser.add_argument('command',choices=['watch','status','stop','scan','events','stream','stream-get','capture-hook','capture-status','timeline','timeline-reindex','delivery-submit','delivery-drain','queue-status','jobs-cancel','streams-status'])
     parser.add_argument('--home',default=str(DEFAULT_HOME))
     parser.add_argument('--event-id')
     parser.add_argument('--offset',type=int,default=0)
@@ -605,7 +616,27 @@ def main():
     parser.add_argument('--since')
     parser.add_argument('--until')
     parser.add_argument('--around')
+    parser.add_argument('--input',type=Path)
+    parser.add_argument('--ids',help='JSON exact selected IDs')
+    parser.add_argument('--reason')
     args=parser.parse_args(); home=Path(args.home); home.mkdir(parents=True,exist_ok=True)
+    if args.command in {'delivery-submit','delivery-drain','queue-status','jobs-cancel','streams-status'}:
+        store=Store(home)
+        try:
+            if args.command=='delivery-submit':
+                with args.input.open('rb') if args.input else __import__('contextlib').nullcontext(sys.stdin.buffer) as source:
+                    raw=source.read(16*1024*1024+1)
+                if len(raw)>16*1024*1024:raise ValueError('Delivery batch exceeds size budget')
+                output=store.submit_deliveries(json.loads(raw))
+            elif args.command=='delivery-drain':output=store.drain_deliveries(ids=json.loads(args.ids) if args.ids else None,limit=args.limit)
+            elif args.command=='jobs-cancel':output=store.cancel_jobs(json.loads(args.ids),args.reason)
+            elif args.command=='streams-status':output=store.stream_status(limit=args.limit)
+            else:output=store.queue_status(args.workspace,limit=args.limit)
+            print(json.dumps(output,ensure_ascii=False))
+        except (ValueError,TypeError,OSError,sqlite3.Error):
+            print(json.dumps({'error':'capture_operation_rejected'}));raise SystemExit(1)
+        finally:store.db.close()
+        return
     if args.command in {'timeline','timeline-reindex'}:
         try:
             if args.command=='timeline-reindex':

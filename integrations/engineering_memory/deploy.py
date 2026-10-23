@@ -20,6 +20,12 @@ def deploy(home):
     changes = {name: (Path(__file__).parent / name).read_text(encoding='utf-8')
                for name in ('listener.py','history_import.py','memory_runtime.py','memory_integration.py','mcp_proxy.py')}
     changes['learning_origin.py']=(root/'contextrail/learning_origin.py').read_text(encoding='utf-8')
+    changes['capture_rules.py']=(root/'contextrail/capture_rules.py').read_text(encoding='utf-8')
+    for name in ('ingest_delivery.py','stream_cursor.py'):
+        code=(root/'contextrail'/name).read_text(encoding='utf-8')
+        for local,remote in (('.sanitization','capture_sanitizer'),('.source_events','event_identity'),('.capture_rules','capture_rules'),('.capture_policy','capture_policy')):
+            code=code.replace('from '+local+' import ','from '+remote+' import ')
+        changes[name]=code
     timeline=(root/'contextrail/timeline_index.py').read_text(encoding='utf-8')
     timeline=timeline.replace('from ._vendor.context_mode_errors import CATEGORIES,classify_error','from context_mode_errors import CATEGORIES,classify_error')
     changes['timeline_index.py']=timeline.replace('from .source_events import workspace_key','from event_identity import workspace_key')
@@ -39,6 +45,7 @@ def deploy(home):
         'from event_identity import source_identity, admit_event, workspace_key, canonical')
     stream=stream.replace('from .capture_policy import SCHEMA as CAPTURE_SCHEMA, claim_owner','from capture_policy import SCHEMA as CAPTURE_SCHEMA, claim_owner')
     stream=stream.replace('from .learning_origin import origin','from learning_origin import origin')
+    stream=stream.replace('from .capture_rules import project_item','from capture_rules import project_item')
     stream=stream.replace('from .timeline_index import SCHEMA as TIMELINE_SCHEMA, index_native, native_partition, query as query_timeline, set_state as timeline_state, MAX_SOURCE, INDEXER',
         'from timeline_index import SCHEMA as TIMELINE_SCHEMA, index_native, native_partition, query as query_timeline, set_state as timeline_state, MAX_SOURCE, INDEXER')
     changes['native_event_stream.py']=stream.replace('from ._vendor.context_mode_tools import normalize_tool_name',

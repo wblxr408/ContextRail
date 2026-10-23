@@ -12,6 +12,8 @@
 
 原始目标、最新纠正的精确窗口、会话候选与显式领取见[RESUME_USE.md](RESUME_USE.md)。`recover`只读；`resume-offer`与`resume-accept`复用原handoff，按精确ID/版本和送达回执推进。
 
+项目捕获策略、持久补传、共享资源退避及日志轮换见[CAPTURE_DELIVERY_USE.md](CAPTURE_DELIVERY_USE.md)。它们复用原记忆服务的队列与游标，状态区分收件、入队、延期、取消和已学习。
+
 面向现有 Agent 的轻量上下文基础层：保留版本化原始证据、编译按预算加载的工作集，并在不同模型会话之间进行可校验交接。核心目标是让 Agent/模型切换时的上下文重建成本尽量低、且不把上一段会话的推理轨迹当作事实继承下来。
 
 当前为 **0.1 基础架构 + 本地评测脚手架**。核心使用 Python 3.11+ 与 SQLite，提供 Python SDK、只读工具挂载接口、本地 JSON-lines 传输，以及可选的 MCP stdio adapter；`contextrail.evaluation` 提供一套 A/B/C 上下文策略的离线/API 评测框架。可选的 `oidc` extra 提供 OIDC Resource Server/membership adapter；默认插件不拥有 IAM。模型调用、登录、组织授权和工具执行由接入方负责。

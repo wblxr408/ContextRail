@@ -201,6 +201,8 @@ def normalize_record(client, row, state):
 
 
 def capture_record(db, client, row, context, source, start, end, generation, normalize_workspace):
+    from .capture_rules import project_item
+    context['_capture_row_modes']={}
     state=context.setdefault('_stream',{'session':_id(context.get('session')),
         'cwd':context.get('cwd',''),'turn':'','turn_open':False})
     emitted=normalize_record(client,row,state)
@@ -214,8 +216,10 @@ def capture_record(db, client, row, context, source, start, end, generation, nor
         event=source_identity(client+'/'+item['type'],workspace,session,item['marker'],source,start,
                               {**generation,'record_part':index})
         body_state='partial_blocks_omitted' if item['data'].get('omitted_blocks') else 'complete'
+        data,disposition=project_item(item,context)
+        if disposition['mode']!='full':body_state='policy_'+disposition['mode']
         try:
-            processed=sanitize_capture(item['data'],item['role'])
+            processed=sanitize_capture(data,item['role'])
         except CaptureError as exc:
             processed=sanitize_capture({'omitted':str(exc)},item['role']);body_state='omitted_limit_or_format'
         payload={'kind':'native-evidence','cwd':workspace,'offset':start,'user':'','final':processed.value}
@@ -233,7 +237,7 @@ def capture_record(db, client, row, context, source, start, end, generation, nor
                 'turn_id':item['turn_id'] or None,'message_id':item['message_id'] or None,'call_id':item['call_id'] or None,
                 'occurred_at':occurred,'source_time_state':status,'observed_at':time.time(),
                 'body_state':body_state,'body_bytes':len(canonical(processed.value).encode('utf-8')),
-                'capture':processed.provenance(),'identity':event,
+                'capture':{**processed.provenance(),'disposition':disposition},'identity':event,
                 'source':{'path':source,'generation':generation,'record_start':start,'record_end':end,
                           'reference_kind':'origin_metadata_not_persistent_raw_byte_ref'},
                 'producer':'existing_jsonl_listener','capture_owner':owner,

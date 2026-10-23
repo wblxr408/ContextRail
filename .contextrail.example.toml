@@ -10,6 +10,12 @@ path = ".context-rail/state.sqlite3"
 
 [capture]
 ignore = [".git/**", ".context-rail/**", ".secret.*", "private/**"]
+# With an active capture policy, unsupported tool/path schemas keep metadata.
+# See CAPTURE_DELIVERY_USE.md before selecting these project-specific rules.
+metadata_only = ["generated/**"]
+user_mode = "full"
+assistant_mode = "full"
+unknown_tools = "metadata_only"
 
 [context]
 required = [] # Declared materials; automatic loading is a later integration.

@@ -3,7 +3,7 @@
 import json
 import re
 
-POLICY='contextrail.learning-origin.v1'
+POLICY='contextrail.learning-origin.v2'
 _WRAPPER=re.compile(r'^\s*<(system-reminder|contextrail-history|codex_internal_context)(?:\s[^>]*)?>')
 
 
@@ -46,6 +46,8 @@ def _artifact(value):
     elif schema=='contextrail.resume-intent.v1' and isinstance(value.get('anchors'),dict) and value.get('coverage')=='declared_anchors_only_not_all_user_history':kind='bridge_projection'
     elif schema=='contextrail.user-intent-source.v1' and isinstance(value.get('source'),dict) and isinstance(value.get('loss'),dict):kind='native_event_projection'
     elif schema in {'contextrail.resume-candidates.v1','contextrail.resume-offer.v1','contextrail.resume-accepted.v1'} and isinstance(value.get('scope',value.get('lease',value.get('resume_intent'))),dict):kind='recovery_management'
+    elif schema=='contextrail.capture-queue.v1' and isinstance(value.get('jobs'),dict) and isinstance(value.get('deliveries'),dict):kind='capture_management'
+    elif schema in {'contextrail.delivery-submit.v1','contextrail.delivery-drain.v1','contextrail.job-cancel.v1','contextrail.stream-cursors.v1'} and isinstance(value.get('entries'),list):kind='capture_management'
     elif schema=='contextrail.bridge/v1' and isinstance(value.get('task_id'),str):kind='bridge_projection'
     elif value.get('trust')=='derived_from_bridge_source' and isinstance(value.get('manifest_ref'),dict) and isinstance(value.get('snapshot'),str):
         kind='bridge_projection';refs.append(value['manifest_ref'])

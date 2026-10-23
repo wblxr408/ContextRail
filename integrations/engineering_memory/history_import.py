@@ -8,11 +8,14 @@ from capture_sanitizer import sanitize_capture, require_safe_identity
 from event_identity import source_identity, admit_event, record_conflict, semantic_content
 from capture_policy import claim_owner, receipt
 from learning_origin import project_candidate
+from capture_rules import load_policy,decide
 
 def enqueue(store,source,scope,event_key,content,occurred_at,kind):
     from listener import digest
     require_safe_identity(str(source));require_safe_identity(str(scope));require_safe_identity(event_key)
-    full=sanitize_capture(content,'document').value
+    policy=load_policy(str(scope))
+    disposition=decide(policy,'tool','tool.call',{'tool':'Read','arguments':{'file_path':str(source)}},str(scope)) if kind=='document' else {'mode':'metadata_only' if policy['invalid'] else policy['default_mode'],'reason':'invalid_policy' if policy['invalid'] else 'explicit_git_import'}
+    full=sanitize_capture(content,'document').value if disposition['mode']=='full' else ''
     # Individual paragraph batches avoid classifying only the final page of an imported document.
     pieces=[];current=''
     for paragraph in full.split('\n\n'):
@@ -26,6 +29,8 @@ def enqueue(store,source,scope,event_key,content,occurred_at,kind):
     root=source_identity('import/'+kind,store.event_workspace(str(scope)),'explicit-import',event_key,str(source),0,imported=True)
     source_payload={'user':'以下是明确导入的历史资料，仅作来源数据。','final':full,'cwd':str(scope),'kind':kind,'source':str(source),'offset':0,'marker':event_key,'occurred_at':occurred_at}
     learning=project_candidate(source_payload,root['id'])
+    if disposition['mode']!='full':learning['_origin']['eligible_for_learning']=False
+    source_payload['_capture_disposition']=disposition
     source_payload.update(_origin=learning['_origin'],producer='explicit_import',capture_owner='existing_import_queue')
     with store.db:
         store.db.execute('BEGIN IMMEDIATE')
@@ -52,7 +57,7 @@ def enqueue(store,source,scope,event_key,content,occurred_at,kind):
                 if admitted['outcome']=='identity_conflict':conflict=admitted['reason'];break
                 count+=int(admitted['outcome']=='inserted')
         if not conflict:
-            receipt(store.db,str(scope),kind,'explicit-import','explicit_import',owner,'admitted' if learning['_origin']['eligible_for_learning'] else 'history_only',root['id'],metadata={'origin':learning['_origin']})
+            receipt(store.db,str(scope),kind,'explicit-import','explicit_import',owner,'admitted' if learning['_origin']['eligible_for_learning'] else 'policy_excluded' if disposition['mode']!='full' else 'history_only',root['id'],metadata={'origin':learning['_origin'],'disposition':disposition})
         if conflict:
             store.db.execute('ROLLBACK TO source_import')
             previous=store.db.execute('SELECT content FROM source_events WHERE id=?',(root['id'],)).fetchone()

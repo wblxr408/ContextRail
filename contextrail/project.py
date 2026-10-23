@@ -52,10 +52,11 @@ class ProjectConfig:
     sources: dict
     config: Path | None
     directory: dict = field(default_factory=dict)
+    capture: dict = field(default_factory=dict)
 
     def describe(self):
         return {"workspace": str(self.workspace), "store": str(self.store), "scope": asdict(self.scope),
-                "identity": self.identity, "required": list(self.required), "capture": {"ignore": list(self.ignore)},
+                "identity": self.identity, "required": list(self.required), "capture": self.capture or {"ignore": list(self.ignore)},
                 "response_bytes": self.response_bytes, "read_bytes": self.read_bytes,
                 "sources": self.sources, "directory": self.directory, "config": str(self.config) if self.config else None}
 
@@ -74,7 +75,7 @@ def load_project(start, *, config_path=None, overrides=None):
     except (OSError, ValueError) as exc:
         raise InvalidRequest("Cannot read valid project TOML.") from exc
     allowed = {"project": {"id", "tenant", "task", "workspace"}, "storage": {"path"},
-               "capture": {"ignore"}, "context": {"required", "response_bytes", "read_bytes"},
+               "capture": {"ignore","allow","metadata_only","user_mode","assistant_mode","default_mode","unknown_tools","tool_modes"}, "context": {"required", "response_bytes", "read_bytes"},
                "directory": {"include", "exclude", "respect_gitignore", "max_files", "max_depth", "max_file_bytes", "max_directory_entries"}}
     if set(data) - allowed.keys():
         raise InvalidRequest("Unknown project configuration table.")
@@ -119,5 +120,8 @@ def load_project(start, *, config_path=None, overrides=None):
         directory[name] = list(paths(directory, name))
     from .directory_sync import directory_options
     directory = directory_options(directory)
+    from .capture_rules import validate_capture
+    try:capture_config=validate_capture(capture)
+    except ValueError:raise InvalidRequest('Invalid project capture policy') from None
     return ProjectConfig(workspace, store, Scope(tenant, project_id, identity["worktree_id"], task), identity,
-                         paths(context, "required"), paths(capture, "ignore"), response_bytes, read_bytes, sources, marker, directory)
+                         paths(context, "required"), paths(capture, "ignore"), response_bytes, read_bytes, sources, marker, directory,capture_config)

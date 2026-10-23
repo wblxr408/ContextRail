@@ -15,3 +15,5 @@ F02/F03增加canonical capture_policy.py与learning_origin.py；部署时生成�
 E08部署独立timeline_index.py及ELv2 context_mode_errors.py，复用原事件库派生时间/来源索引。timeline/timeline-reindex按精确workspace/client/session浏览/有界补建；见[经历指南](../../TIMELINE_USE.md)。旧R库升级schema9前需一致备份，旧资料pending明确，原事件正文不改。
 
 C06/C08/H01作为一个阶段部署：memory_runtime.py提供原目录query_revision与opt-in recall版本/时间精度；mcp_proxy.py只给原内部runtime路由增加该只读目录操作，不增加公开MCP目录。普通recall不附整个catalog token。统一查询/重用/状态位于R适配层，见[阶段指南](../../QUERY_USE.md)。
+
+F05–F08作为一个阶段接入capture_rules.py、ingest_delivery.py、stream_cursor.py和原listener/history_import。原库新增delivery/control/源代/别名，原循环有限drain和共享退避；CLI提供交付、取消与内容无关状态。learning_origin v2排除新管理页。使用与观察限制见[阶段指南](../../CAPTURE_DELIVERY_USE.md)。

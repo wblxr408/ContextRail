@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施；完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 38/72，其余继续按依赖推进。
+按 TODO 持续实施；完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 42/72，其余继续按依赖推进。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -16,6 +16,10 @@
 
 已上传模块：[715dfdbf](https://github.com/wblxr408/ContextRail/commit/715dfdbfa0ff038b44c8181fdfb508b6efb2b158)，origin/main。交付状态在远端确认后补记。
 
+## 第三模块：F05 / F06 / F07 / F08
+
+项目full/metadata_only/skip贯通原M持久化边界，原库delivery逐项确认、共享judge/index退避、显式取消和源代/轮换恢复已接线。本阶段16项集中验收通过，具体缺口定点修复；累计20个当前消费者有对应GREEN记录。受控本机链路、取消与实际指南回读见[阶段验收](openspec/changes/resilient-capture-delivery/verification.md)。
+
 ## 下一阶段
 
-继续按依赖推进原事件服务的捕获策略、补传、背压和日志边界；沿用整阶段验收后提交上传的约定。
+继续D03 / D04 / D06：关键字面证据、摘要提交校验和来源变更后的派生页更新；沿用整阶段验收后提交上传的约定。
