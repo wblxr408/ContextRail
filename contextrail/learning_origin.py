@@ -3,7 +3,7 @@
 import json
 import re
 
-POLICY='contextrail.learning-origin.v2'
+POLICY='contextrail.learning-origin.v3'
 _WRAPPER=re.compile(r'^\s*<(system-reminder|contextrail-history|codex_internal_context)(?:\s[^>]*)?>')
 
 
@@ -48,6 +48,8 @@ def _artifact(value):
     elif schema in {'contextrail.resume-candidates.v1','contextrail.resume-offer.v1','contextrail.resume-accepted.v1'} and isinstance(value.get('scope',value.get('lease',value.get('resume_intent'))),dict):kind='recovery_management'
     elif schema=='contextrail.capture-queue.v1' and isinstance(value.get('jobs'),dict) and isinstance(value.get('deliveries'),dict):kind='capture_management'
     elif schema in {'contextrail.delivery-submit.v1','contextrail.delivery-drain.v1','contextrail.job-cancel.v1','contextrail.stream-cursors.v1'} and isinstance(value.get('entries'),list):kind='capture_management'
+    elif schema=='contextrail.workscene.v1' and all(isinstance(value.get(k),list) for k in ('entries','topics','jobs')):kind='workscene_projection'
+    elif schema=='contextrail.scene-candidates.v1' and isinstance(value.get('candidates'),list) and value.get('authority')=='source_declarations_not_completed_effects':kind='workscene_projection'
     elif schema=='contextrail.bridge/v1' and isinstance(value.get('task_id'),str):kind='bridge_projection'
     elif value.get('trust')=='derived_from_bridge_source' and isinstance(value.get('manifest_ref'),dict) and isinstance(value.get('snapshot'),str):
         kind='bridge_projection';refs.append(value['manifest_ref'])

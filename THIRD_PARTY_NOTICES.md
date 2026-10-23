@@ -30,3 +30,5 @@ F01长连续文本导入暴露Python re与Rust regex的引擎差异：本地URL�
 本地调整：Rust regex 改为 Python stdlib re；env assignment 规则改用有界值捕获，避免吞掉 JSON 分隔符及重复脱敏占位符；增加 JSON/嵌套敏感字段、参数数组、同一 capture 内已知秘密的副本处理、输入资源限制、固定错误、角色与策略类型。未移植上游可配置 allowlist、全部 Unicode 隐藏文本清除与 Rust 持久化类型；不宣称完全等价。
 
 D03/D04/D06 的 `contextrail/fidelity.py` 适配同固定 ai-memory commit 的 `crates/ai-memory-consolidate/src/keep_tokens.rs` 中 URL、路径、错误码、版本与有界 residue 思路和部分 regex（MIT，MODIFIED）。增加 Windows/中文、UTF-8 span、数值单位、否定上下文和确定性提交报告；原上游来源/许可证仍适用。没有移植其 Rust consolidator、淘汰 sweep 或供应商调用；当前校验和版本页协议为本项目接线，不把有限规则声称语义证明。
+
+E02/E03/B08 的 `contextrail/_vendor/context_mode_scene.py` 适配 context-mode同固定commit `src/session/extract.ts` 的文件/任务类别与Git调用解析结构（ELv2，MODIFIED）。本地将调用请求和实际结果分开、限定session/call关联、完成只作声明并由预绑定结果确认，添加中文显式标记、范围与环境来源。保留原ELv2全文；未复制计费、plan_hash、任意脚本推断或上游后台执行器。`workscene.py`的本地状态接线、原actions宿主句柄协议和Windows身份适配独立实现，未引入Rust/Node服务。

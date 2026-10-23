@@ -232,7 +232,9 @@ def capture_record(db, client, row, context, source, start, end, generation, nor
             payload['final']=processed.value
             admitted=admit_event(db,event,payload,source,container=True)
         if admitted['outcome']=='inserted':
+            from .workscene_extract import projection as scene_projection
             metadata={'schema':'contextrail.native-event.v1','id':event['id'],'client':client,
+                'scene':scene_projection(item['type'],processed.value,item['role']),
                 'workspace':workspace,'native_session':session,'role':item['role'],'event_type':item['type'],
                 'turn_id':item['turn_id'] or None,'message_id':item['message_id'] or None,'call_id':item['call_id'] or None,
                 'occurred_at':occurred,'source_time_state':status,'observed_at':time.time(),

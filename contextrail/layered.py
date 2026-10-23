@@ -38,6 +38,7 @@ def trace(store,scope,snapshot,offset,limit):
             'actions':{'entries':[dict(r) for r in actions],'total':total,'offset':offset,'next_offset':offset+len(actions) if offset+len(actions)<total else None},
             'steps':{'entries':[dict(r) for r in rows],'total':count,'offset':offset,'next_offset':offset+len(rows) if offset+len(rows)<count else None},
             'timeline':{'tool':'context.timeline','arguments':{'limit':5},'scope':'task_owned_evidence_live_view','not_a_full_native_transcript':True},
+            'working_scene':{'tool':'context.workscene','arguments':{'limit':5},'scope':'source_linked_observations_tasks_and_host_handles','automatic_retry':False},
             'last_prepared':prepared,'continue_trace':{'tool':'context.explain','arguments':{'snapshot':snapshot,'trace_offset':offset+limit,'trace_limit':limit}}}
 
 

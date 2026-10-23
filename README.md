@@ -1,5 +1,7 @@
 # ContextRail
 
+工作现场、任务变化和在途动作恢复见 [WORKSCENE_USE.md](WORKSCENE_USE.md)（E02/E03/B08）。
+
 摘要字面证据、提交校验和知识页版本使用方式见 [GROUNDED_SUMMARY_USE.md](GROUNDED_SUMMARY_USE.md)（D03/D04/D06）。
 
 采集脱敏与独立原文投影见[CAPTURE_USE.md](CAPTURE_USE.md)，固定上游适配及许可证见[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

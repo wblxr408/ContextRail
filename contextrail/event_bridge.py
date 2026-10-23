@@ -76,6 +76,10 @@ def import_events(store,config,lease,memory_home,client,native_session,*,offset=
                     entries.append(entry);stage_bytes+=len(body)+len(encoded_manifest);imported+=int(status=='imported')
                 for artifact in staged:
                     store._put(config.scope,artifact['name'],artifact['content'],expected_revision=0,media_type='application/json')
+                from .workscene import WorkScene
+                scene=WorkScene(store,config.scope,lease,config.workspace)
+                for entry in entries:
+                    ref=Ref(**entry['body_ref']);scene.native(json.loads(store.get(config.scope,ref).content),ref)
         except (sqlite3.Error,OSError):
             raise Unavailable('Selected memory event evidence could not be read.') from None
         except ValueError:

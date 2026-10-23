@@ -21,6 +21,8 @@ def deploy(home):
                for name in ('listener.py','history_import.py','memory_runtime.py','memory_integration.py','mcp_proxy.py','resource_client.py')}
     changes['learning_origin.py']=(root/'contextrail/learning_origin.py').read_text(encoding='utf-8')
     changes['capture_rules.py']=(root/'contextrail/capture_rules.py').read_text(encoding='utf-8')
+    changes['context_mode_scene.py']=(root/'contextrail/_vendor/context_mode_scene.py').read_text(encoding='utf-8')
+    changes['workscene_extract.py']=(root/'contextrail/workscene_extract.py').read_text(encoding='utf-8').replace('from ._vendor.context_mode_scene import ','from context_mode_scene import ')
     changes['fidelity.py']=(root/'contextrail/fidelity.py').read_text(encoding='utf-8')
     changes['derived_pages.py']=(root/'contextrail/derived_pages.py').read_text(encoding='utf-8')
     for name in ('reflect-schema.json','reflect-instructions.txt'):
@@ -50,6 +52,7 @@ def deploy(home):
     stream=stream.replace('from .capture_policy import SCHEMA as CAPTURE_SCHEMA, claim_owner','from capture_policy import SCHEMA as CAPTURE_SCHEMA, claim_owner')
     stream=stream.replace('from .learning_origin import origin','from learning_origin import origin')
     stream=stream.replace('from .capture_rules import project_item','from capture_rules import project_item')
+    stream=stream.replace('from .workscene_extract import projection as scene_projection','from workscene_extract import projection as scene_projection')
     stream=stream.replace('from .timeline_index import SCHEMA as TIMELINE_SCHEMA, index_native, native_partition, query as query_timeline, set_state as timeline_state, MAX_SOURCE, INDEXER',
         'from timeline_index import SCHEMA as TIMELINE_SCHEMA, index_native, native_partition, query as query_timeline, set_state as timeline_state, MAX_SOURCE, INDEXER')
     changes['native_event_stream.py']=stream.replace('from ._vendor.context_mode_tools import normalize_tool_name',

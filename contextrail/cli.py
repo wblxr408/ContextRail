@@ -21,7 +21,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "result-search",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
-                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project")
+                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -134,6 +134,10 @@ def parser() -> argparse.ArgumentParser:
             else:
                 sub.add_argument('--offset',type=int,default=0)
                 for flag in ('native-session','file','role','origin','error-category','since','until','around'):sub.add_argument('--'+flag)
+        elif command=='workscene':
+            sub.add_argument('--operation',choices=('read','declare','complete','reserve','started','partial','timed-out','recover','cancel','finished','export'),default='read')
+            sub.add_argument('--epoch',type=int)
+            sub.add_argument('--input',type=Path)
         elif command == "event-import":
             sub.add_argument("--epoch",required=True,type=int)
             sub.add_argument("--memory-home",type=Path,default=Path.home()/'.codex/services/engineering-memory')
@@ -338,6 +342,28 @@ def project_command(args):
         elif args.command=='timeline-reindex':
             from .timeline import reindex
             print(canonical(reindex(store,config.scope,Lease(args.session,args.epoch),limit=args.limit)))
+        elif args.command=='workscene':
+            from .workscene import WorkScene
+            from .models import Ref
+            try:
+                raw=args.input.read_bytes() if args.input else sys.stdin.buffer.read(2*1024*1024+1)
+                data=json.loads(raw) if raw.strip() else {}
+                if not isinstance(data,dict) or len(raw)>2*1024*1024:raise ValueError()
+            except (OSError,ValueError,UnicodeError):raise InvalidRequest('Workscene input requires a bounded JSON object') from None
+            if args.operation=='read':
+                value=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes).call('context.workscene',{'budget':config.response_bytes,**data})
+                print(canonical(value));return
+            else:
+                if args.epoch is None:raise InvalidRequest('Host workscene operations require an explicit lease epoch')
+                scene=WorkScene(store,config.scope,Lease(args.session,args.epoch),config.workspace)
+                if 'source' in data:
+                    try:data['source']=Ref(**data['source'])
+                    except (ValueError,TypeError):raise InvalidRequest('Workscene source requires an exact Ref') from None
+                operation={'timed-out':'timed_out','export':'export_state'}.get(args.operation,args.operation)
+                try:value=getattr(scene,operation)(**data)
+                except TypeError:raise InvalidRequest('Workscene operation arguments are invalid') from None
+                if isinstance(value,Ref):value=asdict(value)
+            print(canonical({'operation':args.operation,'result':value}))
         elif args.command == "event-import":
             from .event_bridge import import_events
             print(canonical(import_events(store,config,Lease(args.session,args.epoch),args.memory_home,

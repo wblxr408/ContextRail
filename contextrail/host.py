@@ -54,6 +54,12 @@ class ContextTools:
             from .local_status import status
             self._keys(arguments,required=set(),optional={'snapshot','budget'})
             return status(self,**{**arguments,'budget':arguments.get('budget',min(8192,self.max_read_bytes))})
+        if name=='context.workscene':
+            from .workscene import read
+            self._keys(arguments,required=set(),optional={'offset','limit','budget','query','category','topic'})
+            budget=arguments.get('budget',min(8192,self.max_read_bytes));integer(budget,1)
+            if budget>self.max_read_bytes:raise InvalidRequest('Workscene budget exceeds reader limit')
+            return read(self.store,self.scope,offset=arguments.get('offset',0),limit=arguments.get('limit',20),budget=budget,**{k:arguments[k] for k in ('query','category','topic') if k in arguments})
         if name=='context.timeline':
             from .timeline import timeline
             self._keys(arguments,required=set(),optional={'offset','limit','budget','native_session','file','role','origin','error_category','since','until','around'})
@@ -254,4 +260,6 @@ class ContextTools:
              "input_schema":{"type":"object","properties":{"id":{"type":"string","minLength":1},
                 "offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100},
                 "budget":{"type":"integer","minimum":1}},"required":["id"],"additionalProperties":False}},
+            {"name":"context.workscene","description":"Read source-linked workspace facts, task declarations and host jobs. Stored status is not current process liveness; no execution or cancellation.",
+             "input_schema":{"type":"object","properties":{"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":1000},"budget":{"type":"integer","minimum":1},"query":{"type":"string","minLength":1,"maxLength":2048},"category":{"type":"string","minLength":1},"topic":{"type":"string","minLength":1}},"additionalProperties":False}},
         ]

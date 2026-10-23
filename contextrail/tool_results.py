@@ -26,7 +26,7 @@ class ObservedResult:
     @classmethod
     def parse(cls, data, workspace, *, ignore=()):
         required = {"call_id", "tool", "argv", "cwd", "started_at", "finished_at", "exit_code"}
-        optional = {"stdout", "stderr", "stdout_base64", "stderr_base64", "timed_out", "partial", "source_paths"}
+        optional = {"stdout", "stderr", "stdout_base64", "stderr_base64", "timed_out", "partial", "source_paths", "environment"}
         if not isinstance(data, dict) or not required <= data.keys() or data.keys() - required - optional:
             raise InvalidRequest("Missing or unsupported observed-result fields.")
         for key in ("call_id", "tool"):
@@ -97,6 +97,11 @@ class ObservedResult:
         metadata = {key: data[key] for key in required}
         metadata.update(cwd=str(cwd), source_paths=sources,
                         timed_out=data.get("timed_out", False), partial=data.get("partial", False))
+        if 'environment' in data:
+            environment=data['environment'];allowed={'executable','virtual_env','prefix','base_prefix','worktree','host_executable','host_prefix','host_base_prefix'}
+            if not isinstance(environment,dict) or environment.keys()-allowed or any(not isinstance(v,str) or len(v)>4096 for v in environment.values()):raise InvalidRequest('Invalid host-attested environment')
+            from .sanitization import sanitize_capture
+            metadata['environment']=sanitize_capture(environment,'evidence').value
         return cls(metadata, stream("stdout"), stream("stderr"))
 
     def status(self):
@@ -224,4 +229,6 @@ class OutputRecorder:
                     raise BudgetExceeded("Required intent metadata exceeded its preflight reservation.")
         from .accounting import record_capture
         record_capture(self.store,self.scope,self.lease.session,result,projection)
+        from .workscene import WorkScene
+        WorkScene(self.store,self.scope,self.lease,self.workspace).host_result(refs[2])
         return projection
