@@ -18,9 +18,13 @@ def deploy(home):
     backup = home / 'backups' / ('capture-v1-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ'))
     backup.mkdir(parents=True)
     changes = {name: (Path(__file__).parent / name).read_text(encoding='utf-8')
-               for name in ('listener.py','history_import.py','memory_runtime.py','memory_integration.py','mcp_proxy.py')}
+               for name in ('listener.py','history_import.py','memory_runtime.py','memory_integration.py','mcp_proxy.py','resource_client.py')}
     changes['learning_origin.py']=(root/'contextrail/learning_origin.py').read_text(encoding='utf-8')
     changes['capture_rules.py']=(root/'contextrail/capture_rules.py').read_text(encoding='utf-8')
+    changes['fidelity.py']=(root/'contextrail/fidelity.py').read_text(encoding='utf-8')
+    changes['derived_pages.py']=(root/'contextrail/derived_pages.py').read_text(encoding='utf-8')
+    for name in ('reflect-schema.json','reflect-instructions.txt'):
+        changes[name]=(Path(__file__).parent/name).read_text(encoding='utf-8')
     for name in ('ingest_delivery.py','stream_cursor.py'):
         code=(root/'contextrail'/name).read_text(encoding='utf-8')
         for local,remote in (('.sanitization','capture_sanitizer'),('.source_events','event_identity'),('.capture_rules','capture_rules'),('.capture_policy','capture_policy')):

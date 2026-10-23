@@ -111,7 +111,10 @@ class CompactionLifecycle:
         draft = SummaryDraft(scope, compaction.snapshot, title, text, spans)
         validate_summary_draft(self.store, draft)
         if self.validate is not None:
-            self.validate(draft)
+            try:self.validate(draft)
+            except Exception:
+                self.store.reject_compaction_draft(scope,lease,compaction_id,title=title,text=text,spans=spans)
+                raise
         summary = self.store.complete_compaction(scope, lease, compaction_id, title=title, text=text, spans=spans)
         if self.after is not None:
             self.after(summary)

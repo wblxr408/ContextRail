@@ -930,16 +930,44 @@ class Store:
                 raise Conflict("Compaction is not awaiting a summary.")
             state = self.load_snapshot(scope, row["snapshot"])
             self._validate_spans(scope, state, spans)
-            summary_id = uuid.uuid4().hex
-            summary_sha = digest(canonical({"snapshot": row["snapshot"], "title": title, "text": text,
-                                            "spans": [asdict(ref) for ref in spans]}).encode("utf-8"))
-            self.db.execute("INSERT INTO summaries VALUES(?,?,?,?,?,?,?,?)",
-                            (scope.key, summary_id, row["snapshot"], title, text,
-                             canonical([asdict(ref) for ref in spans]), summary_sha, self.clock()))
-            self.db.execute("UPDATE compactions SET phase='completed',summary_id=? WHERE scope=? AND id=?",
-                            (summary_id, scope.key, compaction_id))
-            self._event(scope, "compaction.completed", compaction=compaction_id, summary=summary_id)
+            from .derivation import report,record
+            quality=report(self,scope,state,text,spans)
+            if not quality['accepted']:
+                record(self,scope,compaction_id,title=title,text=text,spans=spans,status='rejected',report=quality)
+            else:
+                return self._commit_compaction_summary(scope,compaction_id,row,title,text,spans,quality)
+        raise InvalidRequest('Summary rejected by literal fidelity gate; inspect compaction_attempts for draft and reasons.')
+
+    def _commit_compaction_summary(self,scope,compaction_id,row,title,text,spans,quality):
+        from .derivation import record
+        summary_id = uuid.uuid4().hex
+        summary_sha = digest(canonical({"snapshot": row["snapshot"], "title": title, "text": text,
+                                        "spans": [asdict(ref) for ref in spans]}).encode("utf-8"))
+        self.db.execute("INSERT INTO summaries VALUES(?,?,?,?,?,?,?,?)",
+                        (scope.key, summary_id, row["snapshot"], title, text,
+                         canonical([asdict(ref) for ref in spans]), summary_sha, self.clock()))
+        self.db.execute("UPDATE compactions SET phase='completed',summary_id=? WHERE scope=? AND id=?",
+                        (summary_id, scope.key, compaction_id))
+        self._event(scope, "compaction.completed", compaction=compaction_id, summary=summary_id)
+        record(self,scope,compaction_id,title=title,text=text,spans=spans,status='accepted',report=quality,summary_id=summary_id)
         return Summary(summary_id, row["snapshot"], title, text, tuple(spans), summary_sha)
+
+    def reject_compaction_draft(self,scope,lease,compaction_id,*,title,text,spans):
+        from .derivation import record
+        with self.transaction():
+            self._lease(scope,lease)
+            row=self.compaction(scope,compaction_id)
+            if row.session!=lease.session or row.phase!='prepared':raise Conflict('Compaction is not awaiting this owner')
+            state=self.load_snapshot(scope,row.snapshot);self._validate_spans(scope,state,spans)
+            record(self,scope,compaction_id,title=title,text=text,spans=spans,status='rejected',report={'accepted':False,'problems':[{'kind':'host_validator_rejected'}]})
+
+    def compaction_attempts(self,scope,compaction_id):
+        from .derivation import attempts
+        return attempts(self,scope,compaction_id)
+
+    def summary_evidence(self,scope,summary_id):
+        from .derivation import material
+        return material(self,scope,summary_id)
 
     def abort_compaction(self, scope: Scope, lease: Lease, compaction_id: str) -> None:
         with self.transaction():
@@ -979,7 +1007,8 @@ class Store:
         self._task(scope)
         matches = []
         for row in self.db.execute("SELECT id,title,text FROM summaries WHERE scope=? ORDER BY created_at DESC,id", (scope.key,)):
-            if query.casefold() in row["title"].casefold() or query.casefold() in row["text"].casefold():
+            literals=self.summary_evidence(scope,row['id'])['residue']['entries']
+            if query.casefold() in row["title"].casefold() or query.casefold() in row["text"].casefold() or any(query.casefold() in e['text'].casefold() for e in literals):
                 matches.append(self.summary(scope, row["id"]))
                 if len(matches) == limit:
                     break

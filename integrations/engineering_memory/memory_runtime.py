@@ -576,6 +576,28 @@ class MemoryRuntime:
             self._publish_observations()
 
     def reflect(self, query, scope=None, generator=None):
+        with self.lock:
+            self.db.execute('''CREATE TABLE IF NOT EXISTS memory_derivation_attempts(
+                id TEXT PRIMARY KEY,query TEXT,scope TEXT,status TEXT,candidate TEXT,report TEXT,created TEXT)''')
+            candidate={};attempt=uuid4().hex;persisted_query=sanitize_capture(query,'memory').value
+            def capture(evidence):
+                response=generator(evidence)
+                candidate['response']=sanitize_capture(response,'memory').value
+                return candidate['response']
+            try:
+                result=self._reflect_grounded(query,scope,capture if generator else None)
+            except Exception as exc:
+                report=getattr(exc,'report',{'accepted':False,'problems':[{'kind':type(exc).__name__}]})
+                with self.db:self.db.execute('INSERT INTO memory_derivation_attempts VALUES(?,?,?,?,?,?,?)',
+                    (attempt,persisted_query,scope or 'global','rejected',json.dumps(candidate,ensure_ascii=False),json.dumps(report,ensure_ascii=False),datetime.now(timezone.utc).isoformat()))
+                exc.derivation_attempt=attempt
+                raise
+            with self.db:self.db.execute('INSERT INTO memory_derivation_attempts VALUES(?,?,?,?,?,?,?)',
+                (attempt,persisted_query,scope or 'global','accepted',json.dumps(candidate,ensure_ascii=False),json.dumps(result.get('validation',{}),ensure_ascii=False),datetime.now(timezone.utc).isoformat()))
+            return {**result,'derivation_attempt':attempt}
+
+    def _reflect_grounded(self, query, scope=None, generator=None):
+        from fidelity import residue,validate
         retrieved = self.recall(query, scope=scope, limit=8)
         relevant = []
         query_terms = set(tokens(query))
@@ -586,6 +608,15 @@ class MemoryRuntime:
         if not citations:
             return {'status':'insufficient_evidence', 'answer':'没有足够的相关来源支持回答。', 'citations':[]}
         evidence = {'observations':relevant, 'sources':retrieved['results'], 'allowed_citations':citations, 'query':query}
+        selected=[]
+        for note in self.notes():
+            if note['permalink'] in citations:
+                selected.append({'source':note['permalink'],'text':sanitize_capture(note['content'],'memory').value})
+        for row in relevant:
+            for h in row['current_evidence']:
+                selected.append({'source':h['source'],'text':h['quote']})
+        evidence['residue']=residue(selected)
+        evidence['residue']['source_basis']='processed_note_body_utf8_not_raw_markdown_file'
         if generator:
             response = generator(evidence)
             if response.get('status')=='insufficient_evidence':
@@ -601,12 +632,18 @@ class MemoryRuntime:
                 citation,quote = item.get('citation'),item.get('quote')
                 source_text = '\n'.join(r['excerpt'] for r in retrieved['results'] if r['permalink']==citation)
                 source_text += '\n'+'\n'.join(h['quote'] for row in relevant for h in row['current_evidence'] if h['source']==citation)
+                source_text += '\n'+'\n'.join(s['text'] for s in selected if s['source']==citation)
                 if citation not in response['citations'] or not isinstance(quote,str) or not quote.strip() or quote not in source_text:
                     raise ValueError('Reflection support is not an exact quote of cited available evidence')
                 supported.add(citation)
             if supported != set(response['citations']):
                 raise ValueError('Each reflection citation requires exact supporting evidence')
-            return {'status':'synthesized', **response}
+            cited=[s for s in selected if s['source'] in response['citations']]
+            required=[r['current'] for r in relevant if any(h['role']=='user' and h.get('authority') for h in r['current_evidence'])]
+            quality=validate(response['answer'],cited,required=required,require_coverage=False,claims=response.get('claims'))
+            if not quality['accepted']:
+                error=ValueError('Reflection rejected by literal fidelity gate');error.report=quality;raise error
+            return {**response,'status':'synthesized','validation':quality}
         answer = '\n'.join(row['subject']+'：'+row['current'] for row in relevant)
         if not answer:
             answer = '\n\n'.join(r['excerpt'] for r in retrieved['results'][:3])
@@ -629,32 +666,16 @@ class MemoryRuntime:
         return json.dumps({'catalog':self._generation(),'retrieval_policy':'main-query-v1',
             'embedding':getattr(self.models,'embedding_name',None),'reranker':getattr(self.models,'reranker_name',None)},ensure_ascii=False)
 
-    def page(self, name, query, scope=None, refresh=False, generator=None):
+    def page(self, name, query, scope=None, refresh=False, generator=None, *, history=False, version=None):
         if not isinstance(name,str) or not name.strip() or any(c in name for c in '/\\:') or name in {'.','..'}:
             raise ValueError('Knowledge page name must be a simple nonempty label')
-        identity = json.dumps([name,scope_key(scope)], ensure_ascii=False)
-        with self.lock:
-            generation = self._generation()
-            previous = self.db.execute('SELECT * FROM memory_pages WHERE name=?', (identity,)).fetchone()
-            stale = not previous or previous['generation'] != generation or previous['query'] != query
-            if refresh or not previous:
-                answer = self.reflect(query,scope,generator)
-                content = answer['answer']
-                citations = answer['citations']
-                path = self._managed_path('engineering/knowledge-pages',uuid5(NAMESPACE_URL,identity).hex+'.md')
-                if path.is_file() and parse_note(path,self.vault)['meta'].get('managed_by')!='engineering-memory':raise ConflictError('Knowledge page destination contains a human-authored note')
-                atomic_text(path, markdown({'title':name,'type':'knowledge_page','managed_by':'engineering-memory',
-                            'source_query':query,'scope':scope or 'global','citations':citations,
-                            'source_event':'knowledge-page:'+uuid5(NAMESPACE_URL,identity).hex,
-                            'derived_from':citations[:32],'history_origin':'managed_memory_projection'},
-                            '# '+name+'\n\n'+content+'\n\n## 来源\n\n'+'\n'.join('- '+c for c in citations)))
-                with self.db:
-                    self.db.execute('INSERT OR REPLACE INTO memory_pages VALUES(?,?,?,?,?,?)',
-                                    (identity,query,scope or 'global',generation,content,json.dumps(citations)))
-                stale=False
-            else:
-                content,citations=previous['content'],json.loads(previous['citations'])
-            return {'name':name,'query':query,'scope':scope or 'global','content':content,'citations':citations,'stale':stale}
+        if not isinstance(query,str) or not query.strip() or type(history) is not bool or type(refresh) is not bool:
+            raise ValueError('Invalid knowledge page request')
+        if version is not None and (not isinstance(version,str) or not version or len(version)>128):raise ValueError('Invalid page version')
+        if sum((refresh,history,version is not None))>1:raise ValueError('Choose refresh, history, or exact version')
+        identity=json.dumps([name,scope_key(scope)],ensure_ascii=False)
+        from derived_pages import page
+        with self.lock:return page(self,name,query,scope,identity,refresh=refresh,generator=generator,history=history,version=version)
 
 
 def runtime_from_config(config, home):

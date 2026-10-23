@@ -28,3 +28,5 @@ C06/C08/H01阶段将同commit `src/search/unified.ts`的多来源合并结构适
 F01长连续文本导入暴露Python re与Rust regex的引擎差异：本地URL规则加scheme起始边界，auth header名称前缀限制为128字符，避免无界回溯，策略升级v2。已由实际导入用例观察超时后修复；不是Rust实现的完全等价移植。
 
 本地调整：Rust regex 改为 Python stdlib re；env assignment 规则改用有界值捕获，避免吞掉 JSON 分隔符及重复脱敏占位符；增加 JSON/嵌套敏感字段、参数数组、同一 capture 内已知秘密的副本处理、输入资源限制、固定错误、角色与策略类型。未移植上游可配置 allowlist、全部 Unicode 隐藏文本清除与 Rust 持久化类型；不宣称完全等价。
+
+D03/D04/D06 的 `contextrail/fidelity.py` 适配同固定 ai-memory commit 的 `crates/ai-memory-consolidate/src/keep_tokens.rs` 中 URL、路径、错误码、版本与有界 residue 思路和部分 regex（MIT，MODIFIED）。增加 Windows/中文、UTF-8 span、数值单位、否定上下文和确定性提交报告；原上游来源/许可证仍适用。没有移植其 Rust consolidator、淘汰 sweep 或供应商调用；当前校验和版本页协议为本项目接线，不把有限规则声称语义证明。

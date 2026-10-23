@@ -1,0 +1,10 @@
+{
+  "type": "object", "additionalProperties": false,
+  "properties": {
+    "answer": {"type": "string"},
+    "citations": {"type": "array", "items": {"type": "string"}},
+    "support": {"type": "array", "items": {"type": "object", "additionalProperties": false, "properties": {"citation": {"type": "string"}, "quote": {"type": "string"}}, "required": ["citation", "quote"]}},
+    "claims": {"type": "array", "maxItems": 128, "items": {"type": "object", "additionalProperties": false, "properties": {"kind": {"type": "string", "enum": ["source", "inference", "unknown"]}, "text": {"type": "string"}, "citation": {"type": "string"}, "quote": {"type": "string"}}, "required": ["kind", "text"]}},
+    "status": {"type": "string", "enum": ["synthesized", "insufficient_evidence"]}
+  }, "required": ["answer", "citations", "support", "status"]
+}

@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施；完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 42/72，其余继续按依赖推进。
+按 TODO 持续实施；完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 45/72，其余继续按依赖推进。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -22,6 +22,10 @@
 
 已上传模块：[88aa8fb2](https://github.com/wblxr408/ContextRail/commit/88aa8fb2670c93624ec52db770b2a3bc854b10fd)，origin/main；GitHub精确回读确认。
 
+## 第四模块：D03 / D04 / D06
+
+带来源 span/context 的字面证据贯通摘要搜索/读取与 M 输入；原提交入口执行覆盖与冲突门，拒绝草稿可读。知识页保存不可变版本，来源变化/刷新失败时返回 stale 和历史入口。当前17个消费者均有对应GREEN记录；集中验收及具体缺口修复范围见[阶段验收](openspec/changes/grounded-summary-refresh/verification.md)。
+
 ## 下一阶段
 
-继续D03 / D04 / D06：关键字面证据、摘要提交校验和来源变更后的派生页更新；沿用整阶段验收后提交上传的约定。
+继续 E02 / E03 / B08 的工作现场、结构状态和运行作业恢复；沿用整阶段验收后提交上传的约定。

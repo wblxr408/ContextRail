@@ -32,6 +32,8 @@
 
 ## 使用方式与默认约束
 
+关键细节、摘要校验和来源刷新 **D03、D04、D06** 已作为一个阶段完成，累计 **45/72**：摘要外字面细节带精确span/context，原提交门保留拒绝草稿，知识页按来源版本刷新且stale不作当前正文；见[使用指南](../GROUNDED_SUMMARY_USE.md)和[阶段验收](../openspec/changes/grounded-summary-refresh/verification.md)。
+
 项目捕获、补传、背压与源恢复 **F05、F06、F07、F08** 已作为一个阶段完成，累计 **42/72**：策略在原M派生存储前执行，原库收件逐项确认，judge/index共享退避保留积压，明确取消与半行/轮换继续。16项集中通过，部署/边界缺口定点修复，20个当前消费者有对应GREEN；实际受控来源9事件、3项交付、唯一验证job取消且无新增模型调用，指南已通过既有MCP回读。见[捕获与交付指南](../CAPTURE_DELIVERY_USE.md)及[阶段验收](../openspec/changes/resilient-capture-delivery/verification.md)。历史/不可区分的原地重写范围仍明确，不宣称任意日志无损恢复。
 
 恢复意图、精确会话选择与显式领取 **E05、E06、I02** 已作为一个阶段完成，累计 **38/72**：长消息末尾纠正固定为必需原文窗口与START，旧包意图未声明仍明确；缺失精确版本展示本任务候选但不替代，预览不领取。原handoff按显式offer/逐项送达回执推进，重送与迟到ack保留同一lease。当前17个消费者有对应GREEN记录，实际新Bridge revision-3与两端本机处理器、原生MCP精确回读完成；详见[恢复指南](../RESUME_USE.md)及[阶段验收](../openspec/changes/precise-resume-intent/verification.md)。
@@ -546,7 +548,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-d03"></a>
 
-- [ ] **D03｜摘要之外保留关键字面细节**（P1；改写机制）
+- [x] **D03｜摘要之外保留关键字面细节**（P1；改写机制）
 
   **现状：** 当前保留原始脱敏对话，但分类/摘要输入暂无专用 residue 通道。
 
@@ -560,7 +562,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-d04"></a>
 
-- [ ] **D04｜摘要提交前的事实覆盖与冲突说明**（P1；已有能力接线）
+- [x] **D04｜摘要提交前的事实覆盖与冲突说明**（P1；已有能力接线）
 
   **现状：** R CompactionLifecycle 有 validate 回调；M reflect 已校验引文来源。
 
@@ -588,7 +590,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-d06"></a>
 
-- [ ] **D06｜摘要/知识页与源变更的联动更新**（P1；已有能力接线）
+- [x] **D06｜摘要/知识页与源变更的联动更新**（P1；已有能力接线）
 
   **现状：** M page generation/stale 和 Rail snapshot current 已有。
 

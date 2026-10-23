@@ -40,7 +40,8 @@ def dispatch(memory, name, args, generator=None):
     if name=='memory_reflect':
         return mcp_result(memory.reflect(args['query'],args.get('scope'),generator))
     if name=='memory_knowledge_page':
-        return mcp_result(memory.page(args['name'],args['query'],args.get('scope'),args.get('refresh',False),generator))
+        return mcp_result(memory.page(args['name'],args['query'],args.get('scope'),args.get('refresh',False),generator,
+            history=args.get('history',False),version=args.get('version')))
     return None
 
 
@@ -53,7 +54,7 @@ def extra_tools():
       {'name':'memory_reflect','description':'Synthesize a cited answer from current observations and raw sources using the existing model. Unknown evidence is explicit.',
        'inputSchema':{'type':'object','properties':{'query':query,'scope':scope},'required':['query'],'additionalProperties':False},'annotations':{'readOnlyHint':True}},
       {'name':'memory_knowledge_page','description':'Read or refresh a materialized, cited knowledge page in the existing main vault. Refresh writes an owned derived page.',
-       'inputSchema':{'type':'object','properties':{'name':query,'query':query,'scope':scope,'refresh':{'type':'boolean'}},'required':['name','query'],'additionalProperties':False},'annotations':{'readOnlyHint':False,'destructiveHint':False}},
+       'inputSchema':{'type':'object','properties':{'name':query,'query':query,'scope':scope,'refresh':{'type':'boolean'},'history':{'type':'boolean'},'version':query},'required':['name','query'],'additionalProperties':False},'annotations':{'readOnlyHint':False,'destructiveHint':False}},
     ]
 
 

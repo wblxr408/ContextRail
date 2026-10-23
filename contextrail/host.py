@@ -132,12 +132,20 @@ class ContextTools:
                                    "spans": [asdict(ref) for ref in summary.spans],
                                    "snapshot_current": self.store.summary_is_current(self.scope, summary)}
                                   for summary in summaries], "match": "literal_substring"}
+        if name == 'context.summary_evidence':
+            from .derivation import page
+            self._keys(arguments,required={'id'},optional={'offset','limit','budget'})
+            budget=arguments.get('budget',min(8192,self.max_read_bytes));integer(budget,1)
+            if budget>self.max_read_bytes:raise InvalidRequest('Literal evidence budget exceeds reader limit')
+            return page(self.store,self.scope,arguments['id'],offset=arguments.get('offset',0),limit=arguments.get('limit',20),budget=budget)
         if name == "context.summary_get":
             self._keys(arguments, required={"id"}, optional=set())
             summary = self.store.summary(self.scope, arguments["id"])
+            material=self.store.summary_evidence(self.scope,summary.id)
             return {"id": summary.id, "snapshot": summary.snapshot, "title": summary.title,
                     "text": summary.text, "spans": [asdict(ref) for ref in summary.spans],
                     "sha256": summary.sha256,
+                    "evidence": {'policy':material.get('policy'),'accepted':material.get('accepted'),'loss':material['residue']['loss'],'read_tool':'context.summary_evidence'},
                     "snapshot_current": self.store.summary_is_current(self.scope, summary),
                     "trust": "derived_summary_with_source_spans"}
         raise InvalidRequest("Unknown context tool.")
@@ -242,4 +250,8 @@ class ContextTools:
              "input_schema": {"type": "object", "properties": {
                  "id": {"type": "string", "minLength": 1}},
                  "required": ["id"], "additionalProperties": False}},
+            {"name":"context.summary_evidence","description":"Page source-bound literal details omitted by a summary; current state and extraction loss are explicit.",
+             "input_schema":{"type":"object","properties":{"id":{"type":"string","minLength":1},
+                "offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100},
+                "budget":{"type":"integer","minimum":1}},"required":["id"],"additionalProperties":False}},
         ]
