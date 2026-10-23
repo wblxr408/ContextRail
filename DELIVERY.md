@@ -26,6 +26,8 @@
 
 带来源 span/context 的字面证据贯通摘要搜索/读取与 M 输入；原提交入口执行覆盖与冲突门，拒绝草稿可读。知识页保存不可变版本，来源变化/刷新失败时返回 stale 和历史入口。当前17个消费者均有对应GREEN记录；集中验收及具体缺口修复范围见[阶段验收](openspec/changes/grounded-summary-refresh/verification.md)。
 
+已上传模块：[b88bb86c](https://github.com/wblxr408/ContextRail/commit/b88bb86c7c7d3785de2d9b381019d65213aeeee4)，origin/main；GitHub精确回读确认。
+
 ## 下一阶段
 
 继续 E02 / E03 / B08 的工作现场、结构状态和运行作业恢复；沿用整阶段验收后提交上传的约定。

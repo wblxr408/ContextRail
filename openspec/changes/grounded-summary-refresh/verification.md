@@ -28,4 +28,4 @@ tests/test_grounded_derivation_stage.py 冻结当前12消费者，基线集中�
 
 门验证字面覆盖和声明引用，不能证明任意自然语言蕴含；严格改写可因exact要求拒绝。residue有262144bytes/来源与256条上限，loss未覆盖不当成全量。M span对应脱敏note body，不是原文件字节。全库文件元信息generation保守失效，只在调用时核对；同元信息不可见改写不保证识别。旧页legacy_unverified只可历史读取，明确刷新后建立绑定。文件/DB不跨介质原子，版本先写、DB指针权威，孤立版本不当前、投影可修复；外部直接读旧文件的当前性由page工具核对。
 
-最终wheel构建与严格OpenSpec校验通过，日志.context-rail/grounded-final-build.log；格式检查和模块独立提交上传在交付收尾补记。wheel不发布，保留用户既有evaluation/research改动。
+最终wheel构建、严格OpenSpec与git diff --cached --check通过，日志.context-rail/grounded-final-build.log。模块提交[b88bb86c7c7d3785de2d9b381019d65213aeeee4](https://github.com/wblxr408/ContextRail/commit/b88bb86c7c7d3785de2d9b381019d65213aeeee4)已推送origin/main，并经GitHub连接器精确回读。wheel不发布，保留用户既有evaluation/research改动。
