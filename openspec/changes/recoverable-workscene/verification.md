@@ -32,4 +32,4 @@ learning-origin v3最后单文件部署备份为backups/workscene-learning-20261
 
 所有来源为显式导入或宿主提交，M只给候选；不自动导入全历史，不把只读查询变为状态写入。请求不证明结果，Git回执不证明实时HEAD，环境字段是宿主声明而非argv推测，未知不自动重跑。元数据可截短并带projection_loss，完整source Ref保留；操作日志通过单一active working_scene导航回读，强制要求/任务不被文件日志挤占。控制操作受原scope/lease/host owner约束，未知/不支持控制的原宿主session需由其宿主继续处理，不接管另一宿主控制权。STATE导出拒绝覆盖人工文件，也不改原不可变Bridge要求。
 
-最终wheel构建与严格OpenSpec校验通过，日志.context-rail/workscene-final-build.log；格式检查和模块独立上传在收尾补记。wheel不发布，保留用户既有evaluation/research修改及其他untracked。
+最终wheel构建、严格OpenSpec与git diff --cached --check通过，日志.context-rail/workscene-final-build.log。模块提交[d7143d476b868e5f74d8c54f7e232b02936235ad](https://github.com/wblxr408/ContextRail/commit/d7143d476b868e5f74d8c54f7e232b02936235ad)已推送origin/main，并经GitHub连接器精确回读确认。wheel不发布，保留用户既有evaluation/research修改及其他untracked。

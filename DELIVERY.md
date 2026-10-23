@@ -32,6 +32,8 @@
 
 工作现场与原生事件/宿主结果接线，预绑定完成证据、状态声明/推断和原actions在途恢复已实现。显式句柄恢复与树取消保留未知，不自动重跑；操作日志以有界导航进入任务上下文。当前24个消费者有对应GREEN，原M部署与实际Git/环境、STATE及MCP链路见[阶段验收](openspec/changes/recoverable-workscene/verification.md)。
 
+已上传模块：[d7143d47](https://github.com/wblxr408/ContextRail/commit/d7143d476b868e5f74d8c54f7e232b02936235ad)，origin/main；GitHub精确回读确认。
+
 ## 下一阶段
 
 继续 E04 / E07 的错误尝试链和原生中断后可见历史补读；沿用整阶段验收后提交上传的约定。
