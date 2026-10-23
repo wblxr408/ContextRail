@@ -14,6 +14,8 @@
 
 恢复时保留最新有效要求与末尾纠正；精确绑定任务、要求版本、检查点和会话；候选预览与接管分开，接管幂等且拒绝已变化的来源。原生内联限制下保留必需材料，来源清单与冷页仍可精确回读。对应消费者、实际应用和已知覆盖见 [本阶段验收](openspec/changes/precise-resume-intent/verification.md)。
 
+已上传模块：[715dfdbf](https://github.com/wblxr408/ContextRail/commit/715dfdbfa0ff038b44c8181fdfb508b6efb2b158)，origin/main。交付状态在远端确认后补记。
+
 ## 下一阶段
 
 继续按依赖推进原事件服务的捕获策略、补传、背压和日志边界；沿用整阶段验收后提交上传的约定。

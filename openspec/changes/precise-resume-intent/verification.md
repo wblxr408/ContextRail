@@ -38,4 +38,4 @@ Claude的原M调用返回timed_out，未伪造main注入成功；Codex main继�
 
 新增管理输出使用既有learning_origin投影，实际旧安装对新候选页返回eligible=true，观察RED后备份并仅部署learning_origin.py。原control.ps1 stop并等待实际PID57560退出，备份原库/模块至原service/backups/precise-resume-origin-20261023T131255130233Z，再原control.ps1 start。部署回执`.context-rail/precise-resume-deployment-receipt.json`。新管理页不进入学习正文，显式new_user_response仍保留。用例的Windows子进程stdin最初编码不匹配，明确-X utf8后定点GREEN；没有把乱码当成功。
 
-最终wheel构建成功，严格OpenSpec与diff格式检查通过；旧conda可选bdist_conda入口缺失提示不影响构建。未新增默认观察者、记忆库或聊天；新恢复/领取代码不调用模型，原M检索仍走既有入口和预算。交付按用户要求独立提交上传，远端确认后补交付记录。
+最终wheel构建成功，严格OpenSpec与diff格式检查通过；旧conda可选bdist_conda入口缺失提示不影响构建。未新增默认观察者、记忆库或聊天；新恢复/领取代码不调用模型，原M检索仍走既有入口和预算。模块已独立提交为[715dfdbf](https://github.com/wblxr408/ContextRail/commit/715dfdbfa0ff038b44c8181fdfb508b6efb2b158)，git push origin main成功，GitHub connector已读回该commit。交付状态记录作为后续文档提交，不改变本模块行为。
