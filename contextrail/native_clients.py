@@ -388,7 +388,7 @@ def host_hook(path, client, payload, *, native_memory=False):
         with Store(binding["store"]) as store:
             bridge = BridgeEvidence(store, scope, binding["session"])
             sid = bridge.refresh(binding["base_snapshot"], owner)
-            task = bridge.packet(sid, budget=binding["context_bytes"])
+            task = bridge.packet(sid, budget=binding["context_bytes"],intent_details=False)
         specific = original.get("hookSpecificOutput", {})
         if not isinstance(specific, dict) or not isinstance(specific.get("additionalContext", ""), str):
             raise InvalidRequest("Existing memory hook context has an invalid shape.")
@@ -419,6 +419,25 @@ def host_hook(path, client, payload, *, native_memory=False):
             # above this native limit. Count UTF-16 units, including emoji pairs.
             chars = len(result["hookSpecificOutput"]["additionalContext"].encode("utf-16-le")) // 2
             return size <= binding["hook_bytes"] and (inline_characters is None or chars <= inline_characters)
+        if not fits(0) and task.get('resume_intent',{}).get('status')=='anchored':
+            # The full required intent remains in START/evidence. Avoid repeating
+            # its source inventory in the transport envelope, then let the
+            # original compiler omit optional pages within native limits.
+            def compact(value):
+                intent=value['resume_intent']
+                value['resume_intent']={key:intent[key] for key in ('status','effective_request','next_action','coverage','ref')}
+                return value
+            context['task']=compact(task)
+            task_budget=binding['context_bytes']
+            while not fits(0):
+                serialized=canonical(result);inline=result['hookSpecificOutput']['additionalContext']
+                overflow=max(len(serialized.encode('utf-8'))-binding['hook_bytes'],
+                    len(inline.encode('utf-16-le'))//2-(inline_characters or 2**63-1),256)
+                task_budget-=overflow
+                if task_budget<=0:break
+                with Store(binding['store']) as store:
+                    smaller=BridgeEvidence(store,scope,binding['session']).packet(sid,budget=task_budget,intent_details=False)
+                task=smaller;context['task']=compact(smaller)
         if not fits(0):
             raise BudgetExceeded("Complete current task context does not fit the native hook byte/inline budget.")
         low, high = 0, len(history)
@@ -436,6 +455,7 @@ def host_hook(path, client, payload, *, native_memory=False):
                 store._lease(scope, owner)
                 store._event(scope, "native_context.prepared", client=client, native_session=payload["session_id"],
                               turn_id=turn, base_snapshot=binding["base_snapshot"], snapshot=sid,
+                              task_version=task['context']['task']['version'],
                               memory_status=memory_status, memory_chars=len(context["memory"]["text"]),
                               memory_truncated=context["memory"]["truncated"], returned_bytes=prepared_bytes,
                               selected_refs=[row['ref'] for row in task['context'].get('stable_evidence',[])+task['context'].get('evidence',[])],

@@ -32,6 +32,8 @@
 
 ## 使用方式与默认约束
 
+恢复意图、精确会话选择与显式领取 **E05、E06、I02** 已作为一个阶段完成，累计 **38/72**：长消息末尾纠正固定为必需原文窗口与START，旧包意图未声明仍明确；缺失精确版本展示本任务候选但不替代，预览不领取。原handoff按显式offer/逐项送达回执推进，重送与迟到ack保留同一lease。当前17个消费者有对应GREEN记录，实际新Bridge revision-3与两端本机处理器、原生MCP精确回读完成；详见[恢复指南](../RESUME_USE.md)及[阶段验收](../openspec/changes/precise-resume-intent/verification.md)。
+
 任务经历时间线 **E08** 已完成，累计 **26/72**：task/M精确会话按真实时间排序，未知时间置后，文件/错误/邻域过滤及原文refs可用；context-mode错误分类已移植并保留原生状态与exec退出码。13项当前行为和真实SDK通过，R已备份升级schema9，指定task4项/原生会话228项完成补建，任务version74保持。见[时间线指南](../TIMELINE_USE.md)及[验收](../openspec/changes/task-event-timeline/verification.md)。
 
 采集归属与学习来源 **F02、F03** 已完成，累计 **25/72**：原生采集唯一归属既有JSONL监听器，可选工具Hook仅写无正文委托；恢复包/管理页不再学习，块外新纠正仍捕获，原证据保留。12项当前行为、wheel与严格OpenSpec通过，原服务已备份部署，真实Bridge包首次/重放均0知识job，真实工具委托不重复入队。见[来源指南](../ORIGIN_USE.md)及[验收](../openspec/changes/capture-owner-and-learning-origin/verification.md)。
@@ -686,7 +688,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-e05"></a>
 
-- [ ] **E05｜将当前目标和末尾修正锚定到恢复入口**（P0；补强）
+- [x] **E05｜将当前目标和末尾修正锚定到恢复入口**（P0；补强）
 
   **现状：** B 语义要求已有；M user/final 完整保留但 Hook/摘要投影可能缩略。
 
@@ -700,7 +702,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-e06"></a>
 
-- [ ] **E06｜精确 checkpoint/session 恢复与歧义候选**（P0；已有能力接线）
+- [x] **E06｜精确 checkpoint/session 恢复与歧义候选**（P0；已有能力接线）
 
   **现状：** B 明确精确游标；尚无统一客户端会话映射入口。
 
@@ -1108,7 +1110,7 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
 <a id="todo-i02"></a>
 
-- [ ] **I02｜恢复候选只展示，明确选定后才消费**（P1；补强）
+- [x] **I02｜恢复候选只展示，明确选定后才消费**（P1；补强）
 
   **现状：** B 已要求精确游标；新命令的候选选择和消费尚未实现。
 

@@ -20,7 +20,8 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "bridge-receipt", "status", "checkpoints", "search", "continue", "explain",
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "result-search",
-                    "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request")
+                    "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
+                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -185,6 +186,25 @@ def parser() -> argparse.ArgumentParser:
                     sub.add_argument("--budget", type=int, default=8192)
                 else:
                     sub.add_argument("--receipt", type=Path, required=True)
+        elif command in ('recover','resume-bind','resume-offer','resume-accept','resume-abort','intent-project'):
+            if command in ('recover','resume-bind','resume-offer'):
+                sub.add_argument('--snapshot',required=command!='recover')
+                sub.add_argument('--version',type=int,required=command!='recover')
+                sub.add_argument('--budget',type=int,default=8192)
+            if command in ('resume-bind','resume-offer','resume-abort'):sub.add_argument('--epoch',type=int,required=True)
+            if command in ('recover','resume-bind','intent-project'):
+                sub.add_argument('--client',choices=('codex','claude'),required=command!='recover')
+                sub.add_argument('--native-session',required=command!='recover')
+            if command=='resume-bind':sub.add_argument('--binding-id',required=True)
+            if command in ('resume-offer','resume-accept','resume-abort'):sub.add_argument('--operation-id',required=True)
+            if command=='resume-offer':sub.add_argument('--target',required=True,help='Trusted host JSON Target')
+            if command=='resume-accept':sub.add_argument('--receipt',type=Path,required=True)
+            if command=='recover':
+                sub.add_argument('--offset',type=int,default=0);sub.add_argument('--limit',type=int,default=20)
+            if command=='intent-project':
+                sub.add_argument('--memory-home',type=Path,default=Path.home()/'.codex/services/engineering-memory')
+                sub.add_argument('--event-id',required=True);sub.add_argument('--start',type=int,default=0);sub.add_argument('--end',type=int)
+                sub.add_argument('--output',type=Path,help='Create a new full processed-source file without overwriting')
         elif command == "checkpoints":
             sub.add_argument("--offset", type=int, default=0)
             sub.add_argument("--limit", type=int, default=20)
@@ -419,6 +439,27 @@ def project_command(args):
             if args.state_output:
                 from .layered import export_state
                 export_state(output,args.state_output)
+            print(canonical(output))
+        elif args.command in ('recover','resume-bind','resume-offer','resume-accept','resume-abort','intent-project'):
+            from .recovery import Recovery
+            recovery=Recovery(store,config,args.session)
+            if args.command=='recover':
+                if args.snapshot is not None and args.version is not None:
+                    output=recovery.preview(args.snapshot,args.version,budget=args.budget,client=args.client,native_session=args.native_session)
+                else:output=recovery.candidates(snapshot=args.snapshot,version=args.version,client=args.client,native_session=args.native_session,offset=args.offset,limit=args.limit)
+            elif args.command=='resume-bind':output=recovery.bind(args.snapshot,args.version,Lease(args.session,args.epoch),client=args.client,native_session=args.native_session,binding_id=args.binding_id)
+            elif args.command=='resume-offer':
+                try:target=Target(**json.loads(args.target))
+                except (ValueError,TypeError):raise InvalidRequest('Target must be a JSON session/provider/model object') from None
+                output=recovery.offer(args.snapshot,args.version,Lease(args.session,args.epoch),target,operation_id=args.operation_id,budget=args.budget)
+            elif args.command=='resume-accept':
+                from .bridge import _read, _json, MAX_LEDGER
+                output=recovery.accept(args.operation_id,_json(_read(args.receipt,MAX_LEDGER)))
+            elif args.command=='resume-abort':
+                h=recovery._offer(args.operation_id)['handoff'];store.abort(config.scope,h,Lease(args.session,args.epoch));output={'status':'aborted','offer_id':args.operation_id,'handoff':h}
+            else:
+                from .intent import project_native_user
+                output=project_native_user(args.memory_home,config.workspace,args.client,args.native_session,args.event_id,start=args.start,end=args.end,output=args.output)
             print(canonical(output))
         elif args.command in ("status", "checkpoints", "search", "continue"):
             from .navigation import TaskNavigation

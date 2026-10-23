@@ -43,6 +43,9 @@ def _artifact(value):
         kind='context_brief'
     elif schema=='contextrail.metrics.v1' and isinstance(value.get('scope'),dict) and isinstance(value.get('requests'),dict) and isinstance(value.get('tools'),dict):kind='runtime_metrics'
     elif schema=='contextrail.efficiency.v1' and value.get('action') in {'compaction','cache'} and value.get('basis')=='explicit_estimates_not_verified_savings':kind='efficiency_estimate'
+    elif schema=='contextrail.resume-intent.v1' and isinstance(value.get('anchors'),dict) and value.get('coverage')=='declared_anchors_only_not_all_user_history':kind='bridge_projection'
+    elif schema=='contextrail.user-intent-source.v1' and isinstance(value.get('source'),dict) and isinstance(value.get('loss'),dict):kind='native_event_projection'
+    elif schema in {'contextrail.resume-candidates.v1','contextrail.resume-offer.v1','contextrail.resume-accepted.v1'} and isinstance(value.get('scope',value.get('lease',value.get('resume_intent'))),dict):kind='recovery_management'
     elif schema=='contextrail.bridge/v1' and isinstance(value.get('task_id'),str):kind='bridge_projection'
     elif value.get('trust')=='derived_from_bridge_source' and isinstance(value.get('manifest_ref'),dict) and isinstance(value.get('snapshot'),str):
         kind='bridge_projection';refs.append(value['manifest_ref'])

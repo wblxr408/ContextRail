@@ -1019,8 +1019,18 @@ class Store:
             self.db.execute("UPDATE tasks SET version=version+1 WHERE scope=?", (scope.key,))
             self._event(scope, "action.finished", state=state)
 
-    def prepare(self, scope: Scope, lease: Lease, sid: str, target: Target) -> Handoff:
+    def prepare(self, scope: Scope, lease: Lease, sid: str, target: Target, *, resume_operation: dict | None = None) -> Handoff:
         with self.transaction():
+            if resume_operation is not None:
+                identifier(resume_operation.get('operation_id'))
+                prior=self.db.execute("SELECT metadata FROM events WHERE scope=? AND kind='resume.offered' AND json_extract(metadata,'$.request.operation_id')=? ORDER BY sequence DESC LIMIT 1",
+                    (scope.key,resume_operation['operation_id'])).fetchone()
+                if prior:
+                    value=json.loads(prior['metadata'])
+                    if value['request']!=resume_operation:raise Conflict('Resume operation ID already describes another offer')
+                    existing=self.handoff(scope,value['handoff'])
+                    if existing.phase=='aborted':raise Conflict('Resume offer was aborted')
+                    return existing
             self._lease(scope, lease)
             self.load_snapshot(scope, sid)
             if target.session == lease.session:
@@ -1033,6 +1043,7 @@ class Store:
                             (scope.key, hid, sid, lease.session, lease.epoch, canonical(asdict(target))))
             self.db.execute("UPDATE tasks SET handoff=? WHERE scope=?", (hid, scope.key))
             self._event(scope, "handoff.prepared", handoff=hid)
+            if resume_operation is not None:self._event(scope,'resume.offered',handoff=hid,request=resume_operation)
         return self.handoff(scope, hid)
 
     def handoff(self, scope: Scope, hid: str) -> Handoff:

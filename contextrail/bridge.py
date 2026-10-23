@@ -206,6 +206,8 @@ class BridgeEvidence:
         # All semantic validation uses the same frozen bytes we will publish.
         self.validator.call("check", bundle, previous=previous)
         brief = self.validator.call("brief", bundle, scope=bridge_scope)
+        from .intent import declared, publish
+        anchors=declared(bundle)
         chosen = {row["id"] for row in brief["requirements"]}
         rows = data["requirements"]
         for row in rows:
@@ -221,10 +223,14 @@ class BridgeEvidence:
         ledger_ref = artifact(prefix + "/ledger", bundle.raw)
         sources = {name: artifact(prefix + "/sources/" + uuid.uuid5(uuid.NAMESPACE_URL, name).hex, content,
                                    media="application/octet-stream") for name, content in bundle.sources.items()}
+        intent=publish(bundle,anchors,sources,prefix,artifact,selections)
+        if anchors:
+            chosen.update(a['requirement_id'] for role,a in anchors.items() if role!='original_goal' or a['status']=='active')
+        intent_ids={a['requirement_id'] for a in anchors.values()} if anchors else set()
         requirements, required_ids = {}, []
         active = [row for row in rows if row["id"] in chosen]
         for row in rows:
-            mandatory = row["id"] in chosen and (row["always_load"] or row["kind"] in {"goal", "constraint"})
+            mandatory = row["id"] in chosen and (row["always_load"] or row["kind"] in {"goal", "constraint"} or row['id'] in intent_ids)
             ref = artifact(prefix + "/requirements/" + row["id"], canonical(row).encode("utf-8"),
                            required=mandatory, priority=100 if mandatory else 10, selected=row["id"] in chosen)
             requirements[row["id"]] = {"ref": ref, "revision": row["revision"], "status": row["status"],
@@ -235,7 +241,8 @@ class BridgeEvidence:
                     "bridge_scope": bridge_scope, "bundle_path": str(bundle.root), "ledger_ref": ledger_ref,
                     "sources": sources, "requirements": requirements, "required_ids": sorted(required_ids),
                     "base_requirements": baseline,
-                    "deferred_count": brief["deferred_count"]}
+                    "deferred_count": sum(row['status']=='active' for row in rows)-len(active)}
+        if intent is not None:manifest['resume_intent']=intent
         raw_manifest = canonical(manifest).encode("utf-8")
         artifact(manifest_ref.name, raw_manifest, media=MANIFEST_TYPE)
         items.append({"name": self.prefix + "/current", "content": raw_manifest,
@@ -251,11 +258,13 @@ class BridgeEvidence:
 
     def _describe(self, manifest, ref, sid):
         from .learning_origin import origin
+        from .intent import UNKNOWN
         current = self._head(self.prefix + "/current")
         export_current = current is not None and self.store.get(self.scope, current).content == self.store.get(self.scope, ref).content
         return {"task_id": manifest["task_id"], "bridge_snapshot": manifest["snapshot_id"], "snapshot": sid,
                 "bridge_scope": manifest["bridge_scope"], "manifest_ref": asdict(ref),
                 "required_ids": manifest["required_ids"], "deferred_count": manifest["deferred_count"],
+                "resume_intent": manifest.get('resume_intent',dict(UNKNOWN)),
                 "export_current": export_current,
                 "origin": origin('bridge:'+manifest['task_id']+':'+manifest['snapshot_id'],[asdict(ref)],'bridge_projection',False),
                 "trust": "derived_from_bridge_source"}
@@ -284,30 +293,40 @@ class BridgeEvidence:
             raise StaleSnapshot("Bridge source changed; re-import before compiling current requirements.")
         return manifest, saved, ref
 
-    def packet(self, sid, *, budget=8192, layered=False):
+    def packet(self, sid, *, budget=8192, layered=False, intent_details=True):
         # One consistent SQLite view prevents an intervening publication from
         # changing the origin pointer between freshness validation and compile.
         with self.store.read_transaction():
             manifest, _, ref = self._resolve(sid)
-            try:
-                if layered:
-                    from .layered import compile_brief
-                    packet=compile_brief(Compiler(self.store),self.scope,sid,self.session,budget=budget)
-                else:
-                    packet = Compiler(self.store)._compile(self.scope, sid, self.session, budget=budget,
-                        requested=(), layout=None, index=IndexPolicy(max_entries=5))
-            except BudgetExceeded:
-                raise BudgetExceeded("Required Bridge IDs " + ", ".join(manifest["required_ids"]) +
-                                     " and task/navigation do not fit; increase the context byte budget.") from None
             from .loss import packet_loss,report
-            context=_json(packet.body);loss=packet_loss(context)
-            if 'bridge_requirements' not in loss:
-                selected={Ref(**row['ref']) for row in context.get('stable_evidence',[])+context.get('evidence',[])}
-                active=[row for row in manifest['requirements'].values() if row['status']=='active']
-                loss['bridge_requirements']=report('bridge_requirements','requirements',total=len(active),selected=sum(Ref(**row['ref']) in selected for row in active),unknown=0,
-                    scope='active_ledger_requirements',recover={'reader':'context.get','ref':manifest['ledger_ref']})
-            return {**self._describe(manifest, ref, sid),"loss":loss,
-                    "units": packet.units, "unit": packet.unit, "budget": packet.budget, "context":context}
+            working_budget=budget
+            while True:
+                try:
+                    if layered:
+                        from .layered import compile_brief
+                        packet=compile_brief(Compiler(self.store),self.scope,sid,self.session,budget=working_budget)
+                    else:
+                        packet=Compiler(self.store)._compile(self.scope,sid,self.session,budget=working_budget,
+                            requested=(),layout=None,index=IndexPolicy(max_entries=5 if intent_details else 1))
+                except BudgetExceeded:
+                    raise BudgetExceeded("Required Bridge IDs " + ", ".join(manifest["required_ids"]) +
+                                         " and task/navigation do not fit; increase the context byte budget.") from None
+                context=_json(packet.body);loss=packet_loss(context)
+                if 'bridge_requirements' not in loss:
+                    selected={Ref(**row['ref']) for row in context.get('stable_evidence',[])+context.get('evidence',[])}
+                    active=[row for row in manifest['requirements'].values() if row['status']=='active']
+                    loss['bridge_requirements']=report('bridge_requirements','requirements',total=len(active),selected=sum(Ref(**row['ref']) in selected for row in active),unknown=0,
+                        scope='active_ledger_requirements',recover={'reader':'context.get','ref':manifest['ledger_ref']})
+                description=self._describe(manifest,ref,sid)
+                if not intent_details and description['resume_intent']['status']=='anchored':
+                    value=description['resume_intent']
+                    description['resume_intent']={key:value[key] for key in ('status','effective_request','next_action','coverage','ref')}
+                    loss={name:{k:v for k,v in dimension.items() if k!='dimensions'} for name,dimension in loss.items()}
+                result={**description,'loss':loss,'units':packet.units,'unit':packet.unit,'budget':budget,'context':context}
+                size=len(canonical(result).encode('utf-8'))
+                if 'resume_intent' not in manifest or size<=budget:return result
+                working_budget-=max(1,size-budget)
+                if working_budget<=0:raise BudgetExceeded('Required intent envelope exceeds the context budget')
 
     def receipt(self, sid, path):
         with self.store.read_transaction():
