@@ -54,6 +54,14 @@ My Work 的 TypeScript/Vite生产构建通过，Viewer类型检查与esbuild生�
 
 实际执行 `WindowsPowerShell/v1.0/powershell.exe -NoProfile -File D:/ContextRail/Open-ContextRailUI.ps1` 返回0，并在浏览器读取到 self-use-01a161c7 的原任务、原交付物和双端启用状态。当前修复在 Windows 本机完成，属于已授权的宿主相关交付修复。
 
+## 用户指定 MedPanel 样式与新 Logo
+
+已打开用户指定的 Kombai MedPanel 完整说明和实际预览，查看原金奶油画布、文件夹面板、珊瑚/蓝绿、细描边及26px标题。参考页的通用站点 branding 与实际预览不同，本轮依据实际预览。应用到三页；新透明PNG原样接入页头/favicon。详细设计、字体和来源在 CONTEXT_RAIL_BRAND.md。
+
+原工作台四区与旧claude-mem标识作为视觉基线。当前六面板显示原任务、采集1669、待处理149、产物5等现场原记录，既不填医疗样例，也不增加质量估算。My Work和记忆页已在真实浏览器查看共同主题与新品牌导航；窄屏记忆来源下拉原有隐藏规则被共同主题覆盖，筛选控件重新可见。
+
+正常宽度与390px窄屏实际查看：工作台六面板窄屏均为333px单列，文档宽/滚动宽均375px；My Work窄屏宽/滚动宽均375px，记忆页390/390px。视口已恢复默认。此次只做变化范围的视觉基线/排版审阅、现有My Work TypeScript/Vite生产构建及Viewer类型/esbuild构建，不运行旧业务回归、启动/健康或文件存在性探针。品牌函数替换时构建发现原生Agent路径常量被过宽替换，已从原版本恢复其原定义，最终类型与构建通过。
+
 ## 保留的缺口
 
 OpenSpec5.4仍仅余Codex真实compact模型服务拒绝（model_not_found）；未更换账号或模型。原 main 模型召回曾超时/失败，Markdown能浏览不等于召回服务恢复；工作台如实显示队列与失败。UI预览为有界最近资料，既不提供全库全文搜索，也不把未绑定会话自动加入。人工查看依据任务版本和文件元数据，不能当作正文验收。Basic Memory写工具仍不可用，交接/经验待同步草稿保留在当前聊天outputs，未声称已索引。

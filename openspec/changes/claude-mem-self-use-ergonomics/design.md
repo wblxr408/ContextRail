@@ -2,6 +2,8 @@
 
 ## 本地界面技术与边界
 
+用户指定 [MedPanel](https://kombai.com/gallery/inspirations/dashboards-web-26/) 替换当前视觉。已打开完整参考和真实预览，观察到 #FCF2DC 画布、#201D16 正文、#908670 辅助色、#2D6B72 蓝绿、珊瑚红强调、26px标题及等宽小标签；采用细直描边/文件夹标签和六面板密度。Söhne/Berkeley Mono 的比例由已有本地 Geist 和系统等宽字适配，不引入远端字体依赖。工作台将同一原状态响应分到故障、补注入、采集记忆、交付物、历史和接线六面板，不引入医疗样例或推算质量得分。Logo 原样复用本聊天刚生成的透明 PNG，三页页头/标签图标共用；用统一 CSS 层覆盖已有前端，保留原接口和状态流。
+
 用户已明确启用原后置界面。复用固定 b80b29b 的 React My Work/Viewer、纯映射/连接状态、Feed/SessionDetailPage 和生产构建样式；最小源码补丁去掉不适用云/推广/遥测和原账户设置，保留开源声明。上游前端构建一次为静态文件，浏览器原运行时；既有 Python/SQLite 原接口承担本地兼容 API。与完整 Bun/worker/Chroma 相比，该组合复用原 M/R 并避免第二套知识/任务权威与采集进程；与新 React 界面重写相比，保留现成布局和映射边界。保留两套 UI 的构建依赖和源锁，运行期不依赖 npm 或开发服务器。浏览器 DOM 与网络 API 依据 React 官方 useEffect 清理契约；视图继续继承上游样式，Kombai Gallery 仅作仪表盘布局检查参考。
 
 Python ThreadingHTTPServer 仅监听127.0.0.1，验证Host、Origin与JSON写入边界，不提供任意路径/命令/模型参数。记忆只读原 main vault 和原 normalized_events；既有任务/状态/产物/文件查询均走原 ContextTools。显式人工查看仅在原 R 保存 UI 元数据，绑定任务版本和产物实时元数据；它不意味着验收通过或改变租约。设置调用原 toggle_client 并用配置版本拒绝过期更新，不编辑全局账户/模型/Hook。

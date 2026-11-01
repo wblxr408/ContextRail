@@ -36,29 +36,41 @@ async function settings() {
 async function status() {
   const data = await api('/api/rail/status'); pre('status-data', data);
   const target = $('status-summary'); target.replaceChildren();
-  target.append(row('原生采集', `${data.capture?.raw_events ?? '未知'} 条已捕获事件；${data.capture?.status || '未知'}`));
-  target.append(row('记忆处理队列', `已保存 ${data.learning?.saved_jobs ?? '未知'} · 等待处理 ${data.learning?.pending_jobs ?? '未知'}；工作区统计`));
-  target.append(row('压缩后补注入', data.native_assistance?.compact?.last_returned ? '已记录返回回执；模型是否消费以原记录为准。' : '尚无返回回执；展开原生辅助记录查看。'));
-  const causes = { quota_deferred: '配额等待：等记录中的额度窗口恢复；重启不能恢复配额。', credential_rejected: '凭证被拒：请在现有记忆服务中核对凭证。', setup_required: '原服务尚需完成配置。', index_unavailable: '索引暂不可用；原文采集成功不能证明已完成索引。', resource_deferred: '资源退避：等待原服务的退避窗口结束。', queue_deferred: '队列延后：当前证据不能确认具体原因。', awaiting_index: '等待索引：处理结果尚未确认可检索。', failed_jobs: '有失败任务：需检查原队列记录，界面不会自动重放。', memory_state_unavailable: '原记忆状态库不可读；请核对现有绑定和访问权限。', queue_control_unavailable: '原队列缺少可读控制详情，处理原因未知。', classifier_unavailable: '上游故障分类器不可用；需要支持原生 TypeScript 的 Node。' };
+  $('metric-capture').textContent = data.capture?.raw_events ?? '—';
+  $('metric-pending').textContent = data.learning?.pending_jobs ?? '—';
+  $('capture-count').textContent = data.capture?.raw_events ?? '—';
+  $('capture-content').replaceChildren(
+    row('待处理', String(data.learning?.pending_jobs ?? '未知')),
+    row('已保存', String(data.learning?.saved_jobs ?? '未知')),
+    row('失败', String(data.learning?.states?.failed ?? '未记录'))
+  );
+  const compact = data.native_assistance?.compact;
+  const returned = compact?.last_returned;
+  const sourceCurrent = data.requirements?.external_source_current;
+  $('continuity-content').replaceChildren(
+    row('压缩后补注入', returned ? '已记录返回回执；模型消费状态以原记录为准。' : '暂无返回回执，来源状态保持未知。'),
+    row('要求来源', sourceCurrent === true ? '所选快照来源可读' : sourceCurrent === false ? '快照来源有缺口，请核对原记录' : '尚未确认来源新鲜度'),
+    row('确切快照', data.requirements?.snapshot || '尚未绑定快照')
+  );
+  const causes = { quota_deferred: '配额等待', credential_rejected: '凭证被拒', setup_required: '原服务待配置', index_unavailable: '索引暂不可用', resource_deferred: '资源退避', queue_deferred: '队列延后 · 原因未确认', awaiting_index: '等待索引', failed_jobs: '原队列有失败任务', memory_state_unavailable: '原记忆状态库不可读', queue_control_unavailable: '队列控制详情不可读', classifier_unavailable: '故障分类器不可用' };
+  const guidance = { quota_deferred: '等待记录中的额度窗口，重启不能恢复配额。', credential_rejected: '请在现有记忆服务中核对凭证。', setup_required: '完成原服务配置后继续原重试队列。', index_unavailable: '检查原索引队列，采集成功不表示已索引。', resource_deferred: '等待原退避窗口结束，再核对后续记录。', queue_deferred: '当前记录不足以确认具体原因。', awaiting_index: '处理结果尚未确认可检索。', failed_jobs: '请检查原队列记录，是否恢复以新记录为准。' };
   const grouped = new Map();
   for (const item of data.diagnostics || []) {
     const previous = grouped.get(item.code);
     grouped.set(item.code, previous ? { ...previous, count: previous.count + 1, next_retry: Math.max(previous.next_retry || 0, item.next_retry || 0) } : { ...item, count: 1 });
   }
+  $('fault-count').textContent = grouped.size ? grouped.size + ' 类记录' : '暂无故障记录';
   for (const item of grouped.values()) {
-    const due = item.next_retry ? (item.next_retry * 1000 < Date.now() ? '记录中的重试时刻已过，是否恢复未知。' : '记录的下次重试：' + new Date(item.next_retry * 1000).toLocaleString()) : '是否恢复以原服务后续记录为准。';
+    const due = item.next_retry ? (item.next_retry * 1000 < Date.now() ? '记录重试时刻已过，恢复状态未知。' : '记录重试时间 ' + new Date(item.next_retry * 1000).toLocaleTimeString()) : guidance[item.code] || item.action || '请核对原服务后续记录。';
     target.append(row(causes[item.code] || item.code, `${item.count} 条同类记录 · ${due}`));
   }
-  for (const [key, value] of Object.entries(data)) {
-    if (['schema', 'model_calls', 'scope', 'trust', 'display_truncated'].includes(key)) continue;
-    const entry = document.createElement('details'), summary = document.createElement('summary'), body = document.createElement('pre');
-    const names = { task: '任务与要求', capture: '采集状态', learning: '记忆队列', sources: '资料来源', capabilities: '适配能力', errors: '已记录故障', source_errors: '来源故障', native: '原生客户端', explanation: '解释', recovery: '恢复建议', diagnostics: '原故障记录', effective_config: '实际绑定配置', injection: '注入回执', native_assistance: '压缩后与文件辅助记录', requirements: '要求来源新鲜度', task_index: '任务索引', process_liveness: '进程状态证据边界', display_truncated: '展示是否截断' };
-    summary.textContent = names[key] || key; body.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); entry.append(summary, body); target.append(entry);
-  }
+  if (!grouped.size) target.append(row('尚无故障分类记录', '仅表示本次来源未返回分类结果。'));
+  $('last-read').textContent = '本次读取 ' + new Date().toLocaleTimeString() + ' · LOCAL';
 }
 async function products() {
   const data = await api('/api/rail/products'); pre('product-data', data);
-  $('product-list').replaceChildren(...data.items.map((item, index) => row(item.title, `${item.kind} · ${item.availability.state}\n${item.registered_path || item.open_url || ''}`, item.open_path ? link('打开文件 ↗', '/api/rail/product?ref=' + encodeURIComponent(JSON.stringify(item.ref))) : item.open_url ? link('打开地址 ↗', item.open_url) : document.createTextNode('原文件当前不可读'))));
+  $('metric-products').textContent = data.items.length; $('product-count').textContent = data.items.length + ' ITEMS';
+  $('product-list').replaceChildren(...data.items.map((item, index) => row(item.title, `${({metadata_matches:'登记元数据吻合',changed:'当前文件已改变',missing:'原文件缺失',not_checked_remote:'原登记地址'})[item.availability.state] || item.availability.state} · ${item.registered_path || item.open_url || ''}`, item.open_path ? link('打开文件 ↗', '/api/rail/product?ref=' + encodeURIComponent(JSON.stringify(item.ref))) : item.open_url ? link('打开地址 ↗', item.open_url) : document.createTextNode('原文件当前不可读'))));
   if (!data.items.length) $('product-list').textContent = '当前任务尚未登记交付物。';
 }
 $('history-form').onsubmit = async event => {

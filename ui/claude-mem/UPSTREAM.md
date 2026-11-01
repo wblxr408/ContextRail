@@ -12,6 +12,8 @@ License: AGPL-3.0, preserved in LICENSE and NOTICE. This source tree is vendored
 
 ## Local adaptations
 
+- User-requested MedPanel presentation: `contextrail/ui_static/context-theme.css` supplies shared visual tokens and folder navigation; `rail.html/css/js` organize original status into six panels. The generated ContextRail PNG is shared by headers/favicons. My Work's CmemMark now displays the local product mark; original native AgentMark paths remain. See `CONTEXT_RAIL_BRAND.md` for reference, palette, fonts and asset ownership.
+
 - `my-work/src/App.tsx`: ContextRail identity, project settings label and local workbench link; remove Team/feedback/GitHub promotion controls.
 - `my-work/src/pages/my-rules.tsx`: existing registry-backed Codex/Claude project toggles, exact configuration revision, abortable read and visible failures.
 - `my-work/src/components/request-detail.tsx` and `live/review-response.ts`: label human review as having viewed a version. No completion, verification or authority claim.

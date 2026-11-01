@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ActivePill, ClassicViewerLink, DeviceFreshness, LiveIndicator } from '@/components/bits'
+import { ActivePill, DeviceFreshness, LiveIndicator } from '@/components/bits'
 import { Navbar, NavBody } from '@/components/aceternity/resizable-navbar'
 import { Notch } from '@/components/aceternity/notch'
 import { StickyBanner } from '@/components/aceternity/sticky-banner'
@@ -54,7 +54,7 @@ function NavTile({ icon: Icon, active }: { icon: typeof InboxIcon; active: boole
 function HeaderBody({ visible, children }: { visible?: boolean; children: ReactNode }) {
   return (
     // Phones: the pill is 2rem narrower than the bar, so it trims its padding and gaps, and the page title gives way first.
-    <NavBody visible={visible} className={cn('flex h-14 max-w-[1440px] gap-3 bg-card/95 px-4 py-0 md:px-6', visible ? 'header-pill gap-1.5 border border-border/70 px-2.5 md:gap-3 md:px-6' : 'rounded-none border-b border-border/70')}>
+    <NavBody visible={visible} className={cn('rail-work-header flex h-14 max-w-[1440px] gap-3 bg-card/95 px-4 py-0 md:px-6', visible ? 'header-pill gap-1.5 border border-border/70 px-2.5 md:gap-3 md:px-6' : 'rounded-none border-b border-border/70')}>
       {children}
     </NavBody>
   )
@@ -123,7 +123,7 @@ function LoadedApp() {
     <MotionConfig reducedMotion="user">
         <TooltipProvider delayDuration={150}>
           <Req ids={['R10.3', 'R10.2']} className="min-h-svh">
-            <div className="min-h-svh pb-[calc(6rem+env(safe-area-inset-bottom))] text-foreground md:pb-0">
+            <div className="rail-work-app min-h-svh pb-[calc(6rem+env(safe-area-inset-bottom))] text-foreground md:pb-0">
               {/* Wireframe controls: not part of the product. */}
               <StickyBanner hideOnScroll className="min-h-0 flex-wrap justify-start gap-x-3 gap-y-1 border-b border-border/70 bg-card/85 px-4 py-1.5 pr-12 text-xs whitespace-nowrap backdrop-blur-md md:px-6 md:pr-10">
                 {sample && <Badge variant="outline" className="font-normal">Wireframe · sample data</Badge>}
@@ -154,20 +154,21 @@ function LoadedApp() {
                         <span className="sr-only md:not-sr-only md:text-[0.95rem] md:font-semibold md:tracking-tight">ContextRail</span>
                       </span>
                     </Req>
+                    <nav className="rail-topnav rail-work-tabs" aria-label="主导航"><a href="/rail">工作台</a><a href="/" aria-current="page">My Work</a><a href="/viewer">记忆档案</a></nav>
                     <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight whitespace-nowrap md:hidden [.header-pill_&]:text-base">{heading}</h1>
                     <div className="ml-auto flex shrink-0 items-center gap-0.5 md:gap-2">
 
                       <DeviceFreshness />
                       <LiveIndicator />
-                      <ClassicViewerLink />
 
-                      <a href="/rail" className="text-xs text-muted-foreground hover:underline">状态 · 文件历史 · 交付物</a>
+
+                      <span className="rail-header-caption">LOCAL WORKSPACE</span>
                     </div>
                   </HeaderBody>
                 </Navbar>
               </header>
 
-              <div className="mx-auto max-w-[1440px] gap-6 px-4 py-4 md:grid md:grid-cols-[52px_minmax(0,1fr)] md:px-6 md:py-6 lg:grid-cols-[184px_minmax(0,1fr)] lg:gap-8">
+              <div className="rail-work-layout mx-auto max-w-[1440px] gap-6 px-4 py-4 md:grid md:grid-cols-[52px_minmax(0,1fr)] md:px-6 md:py-6 lg:grid-cols-[184px_minmax(0,1fr)] lg:gap-8">
                 <Req ids={['R16.1']} className="hidden md:block">
                   <nav aria-label="Pages" className="sticky top-20 hidden max-h-[calc(100svh-6rem)] space-y-5 self-start overflow-y-auto md:block">
                     <div className="hidden lg:block"><FocusRail selected={selected} onSelect={selectFocus} /></div>
