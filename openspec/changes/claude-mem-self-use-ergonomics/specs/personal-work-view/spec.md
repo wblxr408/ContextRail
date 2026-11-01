@@ -72,3 +72,7 @@
 - **WHEN** 用户关闭个人任务页面
 - **THEN** 原任务、原记忆服务和已保存证据继续保留，页面关闭不触发任务取消或接管
 
+#### Scenario: Windows PowerShell 原生启动
+- **WHEN** 用户使用 Windows PowerShell 5.1 在含中文路径的已接入项目运行启动脚本
+- **THEN** 脚本正确读取 UTF-8 配置，将确切 registry、端口和空闲参数传给后台进程，启动或复用原任务工作台
+

@@ -46,6 +46,14 @@ My Work 的 TypeScript/Vite生产构建通过，Viewer类型检查与esbuild生�
 
 以上不含浏览器标签页、已有记忆/向量服务，或原本按需运行的短时Node格式化子进程。没有为界面运行Vite开发服务器或整套上游worker/Chroma。主进程大正文限制不改变原记录及现有精确回读能力。
 
+## 用户反馈后的启动修复
+
+用户使用 Windows PowerShell 5.1 执行 `./Open-ContextRailUI.ps1` 时，原无 BOM UTF-8 中文报错字符串被按 ANSI 误读，导致后续路径/引号出现 ParserError。现将启动脚本保存为 UTF-8 BOM，并显式按 UTF-8 读取原 active-native-client.json。
+
+本次仅运行新目标 `tests.test_ui_launcher_encoding.WindowsUILauncherEncoding.test_windows_powershell_dispatches_exact_chinese_registry_and_options`。真实 Windows PowerShell 读取实际脚本字节和含中文目录/registry 的 UTF-8 配置；测试只拦截 OS 进程创建，断言恰好一次启动意图、正确路径/参数、工作目录与隐藏窗口。原实现观察到0次派发及用户同类解析失败，修复后该消费断言通过；期间纠正测试拦截器的脚本作用域问题，不将它算作产品RED。未重跑旧6项或其他回归。
+
+实际执行 `WindowsPowerShell/v1.0/powershell.exe -NoProfile -File D:/ContextRail/Open-ContextRailUI.ps1` 返回0，并在浏览器读取到 self-use-01a161c7 的原任务、原交付物和双端启用状态。当前修复在 Windows 本机完成，属于已授权的宿主相关交付修复。
+
 ## 保留的缺口
 
 OpenSpec5.4仍仅余Codex真实compact模型服务拒绝（model_not_found）；未更换账号或模型。原 main 模型召回曾超时/失败，Markdown能浏览不等于召回服务恢复；工作台如实显示队列与失败。UI预览为有界最近资料，既不提供全库全文搜索，也不把未绑定会话自动加入。人工查看依据任务版本和文件元数据，不能当作正文验收。Basic Memory写工具仍不可用，交接/经验待同步草稿保留在当前聊天outputs，未声称已索引。

@@ -8,6 +8,8 @@ Python ThreadingHTTPServer 仅监听127.0.0.1，验证Host、Origin与JSON写入
 
 界面进程按需启动，SSE仅在页面连接期间读现有状态，不注册新监听器、学习器或计划任务。空闲无页面自动退出，原 M/R 不受影响。UI传输在线与来源可读分别表示，保留上游最后已知视图。字体与源码许可随静态文件交付；依赖体量只影响构建期，不把整套node_modules带入运行包。
 
+用户实际 Windows PowerShell 5.1 启动暴露了无 BOM UTF-8 中文字符串按 ANSI 误读的缺口。启动脚本以 UTF-8 BOM 保存，并显式用 Get-Content -Encoding UTF8 读取原 JSON，保留中文工作区/registry 路径；不要求用户切换终端或改变执行策略。依据 [Microsoft 编码说明](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_Character_Encoding)。
+
 ## 本机内存优化增量
 
 用户要求判断实际内存压力并在有压力时优化。2026-11-01 本机约 15.2 GiB 可见内存，可用约 2.3 GiB；新增 Rail 未常驻，但普通 Hook 实测进程树峰值 94–109 MiB，重复文件读取约 136 MiB。仅优化已有临时子进程，不关闭其他应用或原 main/ATR。
