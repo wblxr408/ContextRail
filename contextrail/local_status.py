@@ -25,6 +25,16 @@ def status(tools,*,snapshot=None,budget=8192):
             'source_errors':list(getattr(getattr(tools,'_query_state',None),'errors',[])),
             'capabilities':HostCapabilities.read_only().describe(),
             'process_liveness':'not_observed_by_this_status_read','model_calls':0}
+        result['diagnostics']=[]
+        result['effective_config']={'source':'trusted_host_binding' if binding else 'not_configured',
+            'memory_home':str(binding.memory_home) if binding and binding.memory_home else None,
+            'memory_mode':binding.memory_mode if binding else None,
+            'native_sessions':list(binding.native_sessions) if binding else [],
+            'scope':'trusted_task_workspace','takes_effect':'this_status_read_native_activation_not_observed',
+            'writes_performed':False}
+        view=getattr(tools,'config_view',None)
+        if view:
+            result['effective_config']['project']={k:view[k] for k in ('workspace','store','config','sources','response_bytes','read_bytes')}
         row=tools.store.db.execute("SELECT sequence,at,metadata FROM events WHERE scope=? AND kind='native_context.prepared' ORDER BY sequence DESC LIMIT 1",(tools.scope.key,)).fetchone()
         result['injection']={'status':'prepared_receipt_observed' if row else 'unknown','model_consumption':'unknown'}
         if row:
@@ -58,14 +68,25 @@ def status(tools,*,snapshot=None,budget=8192):
                 result['learning']={'status':'workspace_queue_observed','saved_jobs':states.get('saved',0),'states':states,
                     'pending_jobs':sum(states.get(s,0) for s in ('queued','retry','processing','ready_to_save','awaiting_index')),
                     'scope':'workspace_jobs_not_task','raw_capture_is_not_a_learned_fact':True}
+                from .fault_explanations import explain
+                result['diagnostics'].extend(explain(db,workspace,states))
                 errors=db.execute("SELECT event_id,reason,changed_fields,first_seen FROM source_event_conflicts WHERE json_extract(incoming,'$.workspace')=? ORDER BY id DESC LIMIT 5",(workspace,)).fetchall()
                 result['source_errors']=(result['source_errors']+[dict(r) for r in errors])[-10:]
         except (OSError,sqlite3.Error,ValueError):
             result['memory_source_error']={'code':'existing_memory_state_unavailable','retryable':True}
+            result['diagnostics'].append({'code':'memory_state_unavailable','source':'existing_memory.state.sqlite',
+                'restart_recommended':False,'action':'Review the trusted memory_home and database access; no empty replacement database was created.'})
+    else:
+        result['diagnostics'].append({'code':'memory_source_not_configured','source':'trusted_host_binding',
+            'restart_recommended':False,'action':'Bind the existing memory home to this task; process and learning state are unknown.'})
     # Large task text remains in its authoritative store/Bridge; status is a view.
     result['display_truncated']=False
     while len(canonical(result).encode())>budget:
         if result['source_errors']:result['source_errors'].pop();result['display_truncated']=True;continue
+        if len(result['diagnostics'])>1:
+            result['diagnostics'].pop();result['display_truncated']=True;continue
+        if result['effective_config'].get('project'):
+            result['effective_config'].pop('project');result['display_truncated']=True;continue
         if result['requirements'].get('constraints'):
             result['requirements']['constraints']=[];result['display_truncated']=True;continue
         if result['requirements'].get('acceptance'):

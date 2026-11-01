@@ -18,7 +18,7 @@ from .store import Store
 
 PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "bridge-import", "bridge-packet",
                     "bridge-receipt", "status", "checkpoints", "search", "continue", "explain",
-                    "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "extract-result", "batch-read",
+                    "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "result-search",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene")
@@ -104,7 +104,7 @@ def parser() -> argparse.ArgumentParser:
         sub.add_argument("--response-bytes", type=int)
         sub.add_argument("--read-bytes", type=int)
         if command in {'mcp','query','status','metrics'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
-        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply"):
+        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save"):
             sub.add_argument("--session", required=True)
         if command == "project-init":
             sub.add_argument("--objective", required=True)
@@ -254,8 +254,11 @@ def parser() -> argparse.ArgumentParser:
         elif command == "existing-memory-hook":
             sub.add_argument("--home", type=Path, default=Path.home() / ".codex/services/engineering-memory")
             sub.add_argument("--mode", choices=("hybrid", "text"), default="hybrid")
-        elif command == "client-apply":
-            sub.add_argument("--layout", type=Path, required=True)
+        elif command == "memory-save":
+            sub.add_argument("--home", type=Path, default=Path.home() / ".codex/services/engineering-memory")
+            sub.add_argument("--input", required=True, help="Explicit user record JSON file, or - for stdin")
+        elif command in ("client-apply", "client-remove"):
+            if command == "client-apply": sub.add_argument("--layout", type=Path, required=True)
             sub.add_argument("--client", choices=("codex", "claude"), action="append")
         if command in ("search-indexed", "result-search"):
             sub.add_argument("--context-chars", type=int, default=80)
@@ -491,7 +494,9 @@ def project_command(args):
             from .navigation import TaskNavigation
             navigation = TaskNavigation(store, config, args.session)
             if args.command == "status":
-                output = ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding).call('context.status',{'budget':min(config.read_bytes,max(8192,config.response_bytes))})
+                status_tools = ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
+                status_tools.config_view = config.describe()
+                output = status_tools.call('context.status',{'budget':min(config.read_bytes,max(8192,config.response_bytes))})
             elif args.command == "checkpoints":
                 output = navigation.checkpoints(offset=args.offset, limit=args.limit)
             elif args.command == "search":
@@ -502,7 +507,9 @@ def project_command(args):
         else:
             import asyncio
             from .mcp_server import run_stdio
-            asyncio.run(run_stdio(ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes,query_binding=query_binding)))
+            mcp_tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes,query_binding=query_binding)
+            mcp_tools.config_view = config.describe()
+            asyncio.run(run_stdio(mcp_tools))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -528,6 +535,12 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "client-apply":
             from .native_clients import apply_project_clients
             print(canonical(apply_project_clients(args.layout, args.workspace, clients=args.client or ("codex", "claude"))))
+        elif args.command == "client-remove":
+            from .native_clients import remove_project_clients
+            print(canonical(remove_project_clients(args.workspace, clients=args.client or ("codex", "claude"))))
+        elif args.command == "memory-save":
+            from .explicit_memory import save, read_record
+            print(canonical(save(args.home, args.workspace, read_record(args.input))))
         elif args.command == "client-toggle":
             from .native_clients import toggle_client
             print(canonical(toggle_client(args.registry, args.client, args.enabled)))

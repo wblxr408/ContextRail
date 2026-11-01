@@ -1,5 +1,7 @@
 # ContextRail
 
+claude-mem 第一阶段适配的配置升级/回滚/移除、故障解释与无模型显式记录见 [CLAUDE_MEM_STAGE1_USE.md](CLAUDE_MEM_STAGE1_USE.md)。原 TS 切片按需运行，无新增后台服务。
+
 工作现场、任务变化和在途动作恢复见 [WORKSCENE_USE.md](WORKSCENE_USE.md)（E02/E03/B08）。
 
 摘要字面证据、提交校验和知识页版本使用方式见 [GROUNDED_SUMMARY_USE.md](GROUNDED_SUMMARY_USE.md)（D03/D04/D06）。

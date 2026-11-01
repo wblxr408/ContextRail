@@ -1,0 +1,55 @@
+{
+  "upstream": "https://github.com/thedotmack/claude-mem",
+  "commit": "b80b29bc49d08a71312f44b8feacb2e7585edff4",
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "local": "owned-file-install.ts",
+      "source": "src/shared/owned-file-install.ts",
+      "reuse": "original replaceOwnedFiles staging/rollback body",
+      "patches": [
+        "logger facade",
+        "contained relative paths for multi-file project transaction",
+        "expected-content conflict check",
+        "bounded Windows rename retry",
+        "nested stage/backup parents",
+        "import original renameWithWindowsRetry from selected atomic-json.ts"
+      ]
+    },
+    {
+      "local": "observer-health.ts",
+      "source": "src/shared/observer-health.ts",
+      "reuse": "original two types, constants and ten pure functions",
+      "patches": [
+        "exclude file-backed health ledger, provider message/restart instructions, network and model dependencies"
+      ]
+    },
+    {
+      "local": "save-memory.ts",
+      "source": "src/services/memory/save-memory.ts",
+      "reuse": "literal validation and observation construction from persistMemory",
+      "patches": [
+        "export normalization only; original M retain owns real persistence and source identity",
+        "omit notifications and Chroma/cloud writes"
+      ]
+    },
+    {
+      "local": "atomic-json.ts",
+      "source": "src/shared/atomic-json.ts",
+      "reuse": "literal renameWithWindowsRetry, sleepSync and retry constants",
+      "patches": [
+        "slice excludes JSON persistence, symlink following and diagnostics; node:fs import"
+      ]
+    }
+  ],
+  "runtime": "Node.js >=22.6 with --experimental-strip-types; no npm dependency or daemon",
+  "not_claimed": "No full upstream worker/UI/install or performance equivalence",
+  "adapter_files": [
+    "runner.mjs (JSON dispatch, no shell or background)",
+    "logger.mjs (facade; structured failures returned by runner)",
+    "../../claude_mem.py (bounded Python subprocess argv)",
+    "../../client_config.py (existing JSON/TOML entries and ownership mapping)",
+    "../../fault_explanations.py (existing M records to health taxonomy)",
+    "../../explicit_memory.py (existing M retain persistence)"
+  ]
+}

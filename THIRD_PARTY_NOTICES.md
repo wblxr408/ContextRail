@@ -1,5 +1,7 @@
 # 上游适配来源
 
+2026-11-01：claude-mem 固定 `b80b29bc49d08a71312f44b8feacb2e7585edff4` 的 `src/shared/owned-file-install.ts`、`atomic-json.ts`、`observer-health.ts` 和 `src/services/memory/save-memory.ts` 选定源码主体保留为 TypeScript，位于 `contextrail/_vendor/claude_mem/`。Copyright 2026 Alex Newman；Apache-2.0 完整 LICENSE/NOTICE 随该目录及 wheel 包含。逐函数来源、切片和兼容补丁见 provenance.json，使用与证据见 CLAUDE_MEM_STAGE1_USE.md。Python 只提供本项目所有权、原状态和原 M retain 适配；不引入上游 worker、Chroma、UI 或默认 observer。Node 按需短进程执行，不将研究下载视作完整上游集成。
+
 本地研究副本位于 `.context-rail/upstream/`，不作为 Python 运行依赖，也不运行其安装或后台脚本。
 
 F05–F08阅读并适配ai-memory同固定commit的`ai-memory-hooks/src/capture_policy.rs`和`ai-memory-cli/src/commands/hook_spool.rs`：以封闭元数据、已知工具直接字段及逐项durable ack为依据，实现Python项目规则与原M SQLite inbox。`capture_rules.py`标明MIT来源；使用fnmatch与本地限制，不复制上游glob代数、TTL/容量/重试次数丢事件、私有后台drain或完整Rust服务。源代和队列控制继续在原listener/数据库实现；context-mode的有界DB retry只作瞬态失败参照，不运行其后台或套件。

@@ -193,110 +193,15 @@ def toggle_client(path, client, enabled):
 
 
 def apply_project_clients(layout, workspace, *, clients=CLIENTS):
-    """Merge only this project's generated entries; native Hook trust is unchanged."""
-    layout, workspace = Path(layout).resolve(), Path(workspace).resolve()
-    registry = read_registry(layout / "registry.json")
-    clients = tuple(clients)
-    if not clients or len(set(clients)) != len(clients) or set(clients) - set(CLIENTS):
-        raise InvalidRequest("Choose supported distinct clients.")
-    plans = []
-    def target(relative):
-        path = (workspace / relative).resolve()
-        if not path.is_relative_to(workspace):
-            raise AccessDenied("Client configuration resolves outside the requested workspace.")
-        return path
-    def existing(path):
-        return path.read_bytes() if path.is_file() else None
-    def object_json(raw):
-        try:
-            value = json.loads(raw) if raw is not None else {}
-        except (ValueError, UnicodeError):
-            raise InvalidRequest("Existing project JSON is invalid; preserve it for manual reconciliation.") from None
-        if not isinstance(value, dict):
-            raise InvalidRequest("Existing client configuration must be an object.")
-        return value
-    def json_bytes(value):
-        return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-    for client in clients:
-        matches = [binding for binding in registry["bindings"] if binding["client"] == client and
-                   Path(binding["workspace"]).resolve() == workspace]
-        if len(matches) != 1:
-            raise InvalidRequest("Layout must bind exactly this client and workspace.")
-        if client == "codex":
-            fragment = (layout / "codex.config.toml").read_text(encoding="utf-8")
-            server = tomllib.loads(fragment)["mcp_servers"]["contextrail"]
-            path = target(".codex/config.toml")
-            before = existing(path)
-            try:
-                current = tomllib.loads(before.decode("utf-8")) if before is not None else {}
-            except (ValueError, UnicodeError):
-                raise InvalidRequest("Existing project TOML is invalid; preserve it for manual reconciliation.") from None
-            installed = current.get("mcp_servers", {}).get("contextrail")
-            if installed is not None and installed != server:
-                raise Conflict("Project contextrail MCP entry differs; no user-owned entry was overwritten.")
-            after = before if installed is not None else (before or b"") + b"\n# ContextRail project MCP; Hook trust remains native.\n" + fragment.encode("utf-8")
-            plans.append((path, before, after))
-            hook_fragment = _read_json(layout / "codex.hooks.json")
-            hook_path = target(".codex/hooks.json")
-        else:
-            server = _read_json(layout / "claude.mcp.json")["mcpServers"]["contextrail"]
-            path = target(".mcp.json")
-            before = existing(path)
-            current = object_json(before)
-            servers = current.setdefault("mcpServers", {})
-            if not isinstance(servers, dict):
-                raise InvalidRequest("Existing mcpServers must be an object.")
-            if "contextrail" in servers and servers["contextrail"] != server:
-                raise Conflict("Project contextrail MCP entry differs; reconcile its explicit layout first.")
-            changed = "contextrail" not in servers
-            servers["contextrail"] = server
-            plans.append((path, before, json_bytes(current) if changed else before))
-            hook_fragment = _read_json(layout / "claude.settings.json")
-            hook_path = target(".claude/settings.local.json")
-        before = existing(hook_path)
-        current = object_json(before)
-        hooks = current.setdefault("hooks", {})
-        if not isinstance(hooks, dict):
-            raise InvalidRequest("Existing hooks must be an object.")
-        groups = hooks.setdefault("UserPromptSubmit", [])
-        if not isinstance(groups, list):
-            raise InvalidRequest("Existing UserPromptSubmit must be a list.")
-        commands = []
-        for group in groups:
-            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
-                raise InvalidRequest("Existing Hook groups have an invalid shape.")
-            commands.extend(hook.get("command") for hook in group["hooks"] if isinstance(hook, dict))
-        added = False
-        for group in hook_fragment["hooks"]["UserPromptSubmit"]:
-            handler = group["hooks"][0]
-            if handler["command"] not in commands:
-                groups.append(copy.deepcopy(group))
-                added = True
-        plans.append((hook_path, before, json_bytes(current) if added else before))
-    changed = [(path, before, after) for path, before, after in plans if before != after]
-    backups = workspace / ".context-rail/client-config-backups" / uuid.uuid4().hex
-    for path, before, _ in plans:
-        if existing(path) != before:
-            raise Conflict("A project client configuration changed while the merge was being prepared.")
-    if changed:
-        backups.mkdir(parents=True)
-    for path, before, after in changed:
-        if before is not None:
-            backup = backups / path.relative_to(workspace)
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            backup.write_bytes(before)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix="rail-client-config-", delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(after)
-        try:
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
-    return {"workspace": str(workspace), "applied": [str(path) for path, _, _ in changed],
-            "unchanged": [str(path) for path, before, after in plans if before == after],
-            "backup_dir": str(backups) if changed else None,
-            "activation": {client: "native_hook_review_required" if client == "codex" else "new_session_or_native_project_approval_required" for client in clients}}
+    """Apply the explicitly generated owned entries as one rollback-capable set."""
+    from .client_config import change_clients
+    return change_clients(workspace, clients, layout=layout)
+
+
+def remove_project_clients(workspace, *, clients=CLIENTS):
+    """Remove only unchanged entries recorded in this workspace's receipt."""
+    from .client_config import change_clients
+    return change_clients(workspace, clients)
 
 
 def existing_memory_hook(home, payload, *, mode="hybrid"):

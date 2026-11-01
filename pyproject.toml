@@ -25,6 +25,7 @@ include = ["contextrail*"]
 
 [tool.setuptools.package-data]
 "contextrail._vendor" = ["*_LICENSE.txt"]
+"contextrail._vendor.claude_mem" = ["*.ts", "*.mjs", "*.json", "LICENSE", "NOTICE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
