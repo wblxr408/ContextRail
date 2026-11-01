@@ -1,1 +1,1 @@
-export const logger = {warn() {}}; // Errors remain in the returned structured failure.
+export const logger = {warn() {}, debug() {}}; // Structured host errors own user diagnostics.

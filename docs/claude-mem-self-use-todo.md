@@ -1,6 +1,6 @@
 # claude-mem → context-bridge / ContextRail 自用集成 TODO
 
-修订 3：2026-11-01（Asia/Shanghai）。第一阶段进入实现；实际交付与边界见 CLAUDE_MEM_STAGE1_USE.md 和对应 OpenSpec verification.md，后续阶段仍为规划。
+修订 3：2026-11-01（Asia/Shanghai）。用户确认的 A–D 四阶段已实现；入口与完成审计见 CLAUDE_MEM_SELF_USE.md；后置项维持按需启用。
 
 **优先顺序：稳定性与故障解释 → 压缩后补注入 → 文件相关历史 → 交付物入口。** 完整 My Work/设置页面、人工查看/收藏界面与 Codex/Claude 之外的客户端后置。交付物必须先在当前聊天、CLI 或 MCP 中可找、可回读、可打开，不等待页面完成。
 
@@ -171,7 +171,7 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 
 ### CM05｜原生压缩后补回精确任务入口与相关记忆
 
-- [ ] **P0；新增 Hook 接线。** 挂接：A06 已完成；与进行中的 E07 分工。
+- [x] **P0；新增 Hook 接线。** 挂接：A06 已完成；与进行中的 E07 分工。
 - **自用效果**：会话 compaction 后不必等下一次完整用户请求，仍能找到当前要求和回读入口。
 - **已有能力与缺口**：当前 Rail host_hook 只接受 UserPromptSubmit；原任务包、owner 校验和原 M 注入可复用。
 - **上游实现**：[src/shared/codex-compaction-gate.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/shared/codex-compaction-gate.ts)；[src/shared/session-marker-files.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/shared/session-marker-files.ts)；[src/cli/handlers/post-compact.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/cli/handlers/post-compact.ts)。
@@ -181,11 +181,13 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 - **完成标准**：压缩事件仅登记 pending；下一个可输出上下文的事件补一次；重复事件不反复灌入；旧快照或必需材料不足明确报缺口；当前纠正仍可精确回读。
 - **适配边界**：上游 marker 删除早于真实送达，不是模型消费证明；本地按 pending→prepared→returned 记录，不自动续写或接管；不新增多 Agent 架构。
 
+- **A–D 交付依据**：`CLAUDE_MEM_SELF_USE.md` 与 OpenSpec `completion-audit.md`；固定原源码和本地接口见 provenance.json。
+
 <a id="cm06"></a>
 
 ### CM06｜读取或编辑文件时展示该文件的相关历史
 
-- [ ] **P0；新增触发接线。** 挂接：C06/C08/E02 已完成，复用其检索与来源。
+- [x] **P0；新增触发接线。** 挂接：C06/C08/E02 已完成，复用其检索与来源。
 - **自用效果**：打开一个文件就能看见之前为何这样改、踩过什么坑，减少额外问一次记忆。
 - **已有能力与缺口**：已有文件/场景来源、三源查询、时间线和重复查询缓存；缺 PreToolUse 文件事件与长期记忆的自动关联。
 - **上游实现**：[src/cli/handlers/file-context.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/cli/handlers/file-context.ts)；[src/cli/handlers/file-context-dedupe.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/cli/handlers/file-context-dedupe.ts)；[src/cli/adapters/codex-file-context.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/cli/adapters/codex-file-context.ts)；[src/services/sqlite/observations/files.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/services/sqlite/observations/files.ts)。
@@ -194,6 +196,8 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 - **依赖/前置**：CM01、CM03；复用已完成 C06/C08/E02；必要的 CM14 路径处理；CM05 可先交付，也可共用事件层；不依赖 CM08/CM09 页面。
 - **完成标准**：在 Codex/Claude 的支持事件中，读/改文件时收到带来源的短历史；同来源版本不重复，新版本可再补；路径与 worktree 正确；可选历史失败不中断普通读取。
 - **适配边界**：不继承上游 whole-file Read deny；shell 路径提取只认支持的结构，复杂 PowerShell 不猜；自动捕获继续由原监听器负责。
+
+- **A–D 交付依据**：`CLAUDE_MEM_SELF_USE.md` 与 OpenSpec `completion-audit.md`；固定原源码和本地接口见 provenance.json。
 
 <a id="cm07"></a>
 
@@ -241,7 +245,7 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 
 ### CM10｜聊天、CLI/MCP 中可直接打开的交付物入口
 
-- [ ] **P0；新增结果关联。** 挂接：E03、I04；复用已有产物原文。
+- [x] **P0；新增结果关联。** 挂接：E03、I04；复用已有产物原文。
 - **自用效果**：报告、图片、PR 等结果能挂在对应任务下，隔几天还能找到。
 - **已有能力与缺口**：当前 task state 与 Ref 能保存来源；缺统一的 deliverable 视图和失效位置说明。
 - **上游实现**：[src/services/work-view/work-product.mjs](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/services/work-view/work-product.mjs)；[src/cli/deliverables-capture.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/cli/deliverables-capture.ts)；[src/services/sqlite/deliverables.ts](https://github.com/thedotmack/claude-mem/blob/b80b29bc49d08a71312f44b8feacb2e7585edff4/src/services/sqlite/deliverables.ts)。
@@ -250,6 +254,8 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 - **依赖/前置**：CM01；现有 Store/宿主来源回执；相关 CM14 文件路径处理；无 CM08、CM09 页面、CM11 或 CM21 依赖。
 - **完成标准**：从当前任务直接列出报告/图片/PR 等产物并得到可打开的路径或链接；绑定 task/source/revision；变更/缺失说明清楚；不用启动完整页面；链接不等于已发布证据。
 - **适配边界**：不照搬 Stop 扫描任意目录、自动复制到个人 deliverables bucket；不因发现链接而发送、上传或打开外部资源。
+
+- **A–D 交付依据**：`CLAUDE_MEM_SELF_USE.md` 与 OpenSpec `completion-audit.md`；固定原源码和本地接口见 provenance.json。
 
 <a id="cm11"></a>
 
@@ -459,7 +465,7 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 | D：交付物入口 | CM10 | 当前聊天、CLI/MCP 能直接找到并打开结果；不依赖 CM08/CM11/CM21 |
 | E：后续按需 | CM08/CM11/CM21 完整界面；其他 P1/P2/按需扩展；更多客户端 | 只有实际操作成本或第三客户端使用需求出现时再选；优先保留上游页面/适配器 |
 
-阶段 A 已实施；CM04 仅只读来源、CM14 仅本批 Windows 配置路径完成，完整条目不勾选。CM24 仅记录本批行为证据，后续场景不勾选。先完成实际用户行为再决定是否增加页面或服务。首批只覆盖 Codex/Claude，其他客户端不做通用适配框架、不先安装，也不列首批验收条件。
+阶段 A–D 已实施。CM04 仅只读来源/预览、CM07/CM09 仅核心导航、CM14 仅本批路径，完整后置条目不勾选；CM24 已记录本批四类行为证据，广泛费用/长期收益仍未知。先完成实际用户行为再决定是否增加页面或服务。首批只覆盖 Codex/Claude，其他客户端不做通用适配框架、不先安装，也不列首批验收条件。
 
 未来实现按当前开发契约完成本批最小行为 TDD 和阶段文档；不从本文取得旧套件、泛化基准、探针或付费调用的额外授权。CM24 随各阶段记录“是否少问一次、能否找到来源、失败后是否保留数据、是否能直接打开产物”，不先做大规模 benchmark。本阶段仅执行新增行为契约与必要构建/schema 检查；具体命令与结果见 verification.md。
 
@@ -508,7 +514,7 @@ P0 的资源与 Windows 改进只覆盖本批实际触及的模块，不扩成�
 
 上游固定 commit 的主 LICENSE 和 NOTICE 为 Apache-2.0。后续实际复制/移植代码时保留原版权和许可，登记本地改动；其第三方依赖、grammar、字体和图片仍须分别核对，主仓库许可不能代替各依赖许可。这里是源码来源登记，不是法律结论。
 
-研究原件位于本聊天 work/claude-mem/b80b29bc49d08a71312f44b8feacb2e7585edff4/；来源清单见随报告交付的 claude-mem-source-index.json。仓库内 TODO 为 docs/claude-mem-self-use-todo.md；规划为 openspec/changes/claude-mem-self-use-ergonomics/。本轮没有移植运行时代码、升级安装、改客户端配置、提交、推送或调用模型。
+研究原件位于本聊天 work/claude-mem/b80b29bc49d08a71312f44b8feacb2e7585edff4/；来源清单见随报告交付的 claude-mem-source-index.json。仓库内 TODO 为 docs/claude-mem-self-use-todo.md；规划为 openspec/changes/claude-mem-self-use-ergonomics/。A–D 运行时适配、来源、任务分支与验证已交付；未调用模型、未改原生 trust/账户/原 M app。
 
-完成标准均是未来实现应观察的行为，不是本次已经通过的测试。用户已确认这次优先顺序和直接复用方向，未逐项接受后置功能、运行时选择或授权本轮开始实施。
+A–D 完成标准见实际审计与本批行为结果。用户确认后置项继续按需，不把其未启用状态改成完成。
 

@@ -79,10 +79,14 @@ def read_registry(path):
     _validate_memory(registry.get("memory"))
     for binding in registry["bindings"]:
         keys = {"client", "workspace", "store", "scope", "session", "base_snapshot", "owner", "enabled", "context_bytes", "hook_bytes"}
-        if (not isinstance(binding, dict) or not keys <= binding.keys() or binding.keys() - keys - {"memory"}
+        if (not isinstance(binding, dict) or not keys <= binding.keys() or binding.keys() - keys - {"memory", "query_binding", "context_assistance"}
                 or binding["client"] not in CLIENTS or type(binding["enabled"]) is not bool):
             raise InvalidRequest("Invalid native task binding.")
         _validate_memory(binding.get("memory"))
+        if type(binding.get('context_assistance',False)) is not bool:
+            raise InvalidRequest('Context assistance switch must be boolean.')
+        if binding.get('context_assistance') and (not isinstance(binding.get('query_binding'),str) or not Path(binding['query_binding']).is_absolute()):
+            raise InvalidRequest('Context assistance requires an absolute trusted query binding.')
         if not isinstance(binding["scope"], dict) or set(binding["scope"]) != {"tenant", "project", "branch", "task"}:
             raise InvalidRequest("Binding requires an exact scope object.")
         if not isinstance(binding["owner"], dict) or set(binding["owner"]) != {"session", "epoch"}:
@@ -102,7 +106,7 @@ def read_registry(path):
 
 
 def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIENTS, memory_command=None,
-                    context_bytes=8192, hook_bytes=24576, task_memory_command=None, native_memory_clients=(), query_binding=None):
+                    context_bytes=8192, hook_bytes=24576, task_memory_command=None, native_memory_clients=(), query_binding=None, context_assistance=False):
     from dataclasses import asdict
     clients = tuple(clients)
     if query_binding is not None:
@@ -116,6 +120,8 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
     output = Path(output).resolve()
     if output.exists():
         raise InvalidRequest("Generate into a new layout directory; existing configuration is never overwritten.")
+    if context_assistance and query_binding is None:
+        raise InvalidRequest("Context assistance requires an exact existing-memory query binding.")
     command = _argv(_read_json(memory_command)) if memory_command else None
     task_command = _argv(_read_json(task_memory_command)) if task_memory_command else None
     bridge = BridgeEvidence(store, config.scope, lease.session)
@@ -131,6 +137,8 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
         registry["bindings"].append({"client": client, "workspace": str(config.workspace), "store": str(config.store),
             "scope": asdict(config.scope), "session": reader.session, "base_snapshot": base_snapshot,
             "owner": asdict(lease), "enabled": True, "context_bytes": context_bytes, "hook_bytes": hook_bytes})
+        if context_assistance:
+            registry["bindings"][-1].update(query_binding=str(query_binding), context_assistance=True)
         if task_command:
             registry["bindings"][-1]["memory"] = {"command": task_command, "timeout_seconds": 18}
     # Validate with the same consumer contract before membership/file publication.
@@ -169,6 +177,10 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
                 (stage / name).write_text(canonical({"mcpServers": {"contextrail": server}}), encoding="utf-8")
                 hook_name = "claude.settings.json"
             hooks = {"hooks": {"UserPromptSubmit": [{"hooks": [handler]}]}}
+            if context_assistance:
+                for event in ("PostCompact", "SessionStart", "PostToolUse", "PreToolUse"):
+                    # One native invocation; it dispatches the actual event from stdin.
+                    hooks["hooks"][event] = [{"hooks": [copy.deepcopy(handler)]}]
             (stage / hook_name).write_text(canonical(hooks), encoding="utf-8")
             profiles[client] = {"mcp_config": str(output / name), "hook_config": str(output / hook_name),
                                 "reader": reader.session, "memory_delivery": "existing_native_hook" if client in native_memory_clients else "composed_wrapper",
@@ -262,6 +274,14 @@ def _memory_hook(memory, payload):
 
 
 def host_hook(path, client, payload, *, native_memory=False):
+    if isinstance(payload, dict) and payload.get("hook_event_name") != "UserPromptSubmit":
+        from .native_assistance import assist
+        return assist(path, client, payload)
+    if isinstance(payload, dict):
+        from .native_assistance import assist
+        recovery = assist(path, client, payload, optional=True)
+        if recovery is not None:
+            return recovery
     if client not in CLIENTS or not isinstance(payload, dict) or payload.get("hook_event_name") != "UserPromptSubmit":
         raise InvalidRequest("Only the configured clients' UserPromptSubmit event is supported.")
     identifier(payload.get("session_id"))
@@ -285,7 +305,12 @@ def host_hook(path, client, payload, *, native_memory=False):
     original, memory_status = ({}, "provided_by_existing_native_hook_not_observed") if native_memory else _memory_hook(memory, payload)
     if not matches or not matches[0]["enabled"] or original.get("decision") == "block" or original.get("continue") is False:
         return original
-    binding = matches[0]
+    return _task_context(matches[0], payload, client, original, memory_status)
+
+
+def _task_context(binding, payload, client, original, memory_status):
+    cwd = Path(payload["cwd"]).resolve()
+    turn = payload.get("turn_id")
     try:
         scope, owner = Scope(**binding["scope"]), Lease(**binding["owner"])
         if not Path(binding["store"]).is_file():
@@ -305,7 +330,7 @@ def host_hook(path, client, payload, *, native_memory=False):
                    "origin": {**origin('native-context:'+client+':'+payload['session_id']+':'+str(turn or 'unknown'),
                                        [task['origin']['source_event']], 'native_context', False),
                               "client": client, "native_session": payload["session_id"], "turn_id": turn,
-                              "event": "UserPromptSubmit", "cwd": str(cwd)},
+                              "event": payload["hook_event_name"], "cwd": str(cwd)},
                    "history_control": "not_controlled", "history_replaced": False}
         result = copy.deepcopy(original)
         inline_characters = 10000 if client == "claude" else None
@@ -316,7 +341,7 @@ def host_hook(path, client, payload, *, native_memory=False):
                 selected=len(history[:length].encode('utf-8')) if observed else None,
                 truncated=len(history.encode('utf-8'))-len(history[:length].encode('utf-8')) if observed else None,unknown=0 if observed else None,
                 scope='observed_hook_result_only_not_complete_history',reasons={'hook_status':memory_status},recover={'reader':'basic-memory.read_note','project':'main'})}
-            result["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit", "additionalContext": canonical(context)}
+            result["hookSpecificOutput"] = {"hookEventName": payload["hook_event_name"], "additionalContext": canonical(context)}
             return len(canonical(result).encode("utf-8"))
         def fits(length):
             size = render(length)

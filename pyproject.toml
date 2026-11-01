@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.28,<2"]
+mcp = ["mcp>=1.28,<3"]
 oidc = ["PyJWT[crypto]>=2.10,<3"]
 eval = ["inspect-ai==0.3.10", "openai>=3,<4"]
 swebench = ["swebench==5.0.2"]
@@ -24,6 +24,7 @@ contextrail-eval = "contextrail.evaluation.__main__:main"
 include = ["contextrail*"]
 
 [tool.setuptools.package-data]
+"contextrail" = ["*.ps1"]
 "contextrail._vendor" = ["*_LICENSE.txt"]
 "contextrail._vendor.claude_mem" = ["*.ts", "*.mjs", "*.json", "LICENSE", "NOTICE"]
 

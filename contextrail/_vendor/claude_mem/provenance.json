@@ -40,6 +40,87 @@
       "patches": [
         "slice excludes JSON persistence, symlink following and diagnostics; node:fs import"
       ]
+    },
+    {
+      "local": "session-marker-files.ts",
+      "source": "src/shared/session-marker-files.ts",
+      "reuse": "original marker mark/take and postCompactHandler flow",
+      "patches": [
+        "local import facades; erased external type-only imports",
+        "gate adds non-consuming has; Rail original DB receipt controls returned/dedupe",
+        "same main-session gate reused for Claude SessionStart compact"
+      ]
+    },
+    {
+      "local": "codex-compaction-gate.ts",
+      "source": "src/shared/codex-compaction-gate.ts",
+      "reuse": "original marker mark/take and postCompactHandler flow",
+      "patches": [
+        "local import facades; erased external type-only imports",
+        "gate adds non-consuming has; Rail original DB receipt controls returned/dedupe",
+        "same main-session gate reused for Claude SessionStart compact"
+      ]
+    },
+    {
+      "local": "post-compact.ts",
+      "source": "src/cli/handlers/post-compact.ts",
+      "reuse": "original marker mark/take and postCompactHandler flow",
+      "patches": [
+        "local import facades; erased external type-only imports",
+        "gate adds non-consuming has; Rail original DB receipt controls returned/dedupe",
+        "same main-session gate reused for Claude SessionStart compact"
+      ]
+    },
+    {
+      "local": "file-context.ts",
+      "source": "src/cli/handlers/file-context.ts",
+      "reuse": "selected original handler/ranking/paths/format/atomic SQL",
+      "patches": [
+        "host supplies exact original M/R timeline rows and allowed paths; original R executes CLAIM_GATE_SQL after final budget check",
+        "exclude full-file deny, smart redirects, worker/model calls, duplicate memorySearch, TTL sweep and Bash shell-quote dependency",
+        "source event IDs may be strings; unknown occurrence time is labeled unknown; exact detail hints use original ContextRail reader",
+        "PowerShell uses local literal-only AST adapter, never evaluates the tool command"
+      ]
+    },
+    {
+      "local": "file-context-dedupe.ts",
+      "source": "src/cli/handlers/file-context-dedupe.ts",
+      "reuse": "selected original handler/ranking/paths/format/atomic SQL",
+      "patches": [
+        "host supplies exact original M/R timeline rows and allowed paths; original R executes CLAIM_GATE_SQL after final budget check",
+        "exclude full-file deny, smart redirects, worker/model calls, duplicate memorySearch, TTL sweep and Bash shell-quote dependency",
+        "source event IDs may be strings; unknown occurrence time is labeled unknown; exact detail hints use original ContextRail reader",
+        "PowerShell uses local literal-only AST adapter, never evaluates the tool command"
+      ]
+    },
+    {
+      "local": "codex-file-context.ts",
+      "source": "src/cli/adapters/codex-file-context.ts",
+      "reuse": "selected original handler/ranking/paths/format/atomic SQL",
+      "patches": [
+        "host supplies exact original M/R timeline rows and allowed paths; original R executes CLAIM_GATE_SQL after final budget check",
+        "exclude full-file deny, smart redirects, worker/model calls, duplicate memorySearch, TTL sweep and Bash shell-quote dependency",
+        "source event IDs may be strings; unknown occurrence time is labeled unknown; exact detail hints use original ContextRail reader",
+        "PowerShell uses local literal-only AST adapter, never evaluates the tool command"
+      ]
+    },
+    {
+      "local": "timeline-formatting.ts",
+      "source": "src/shared/timeline-formatting.ts",
+      "reuse": "selected original handler/ranking/paths/format/atomic SQL",
+      "patches": [
+        "host supplies exact original M/R timeline rows and allowed paths; original R executes CLAIM_GATE_SQL after final budget check",
+        "exclude full-file deny, smart redirects, worker/model calls, duplicate memorySearch, TTL sweep and Bash shell-quote dependency",
+        "source event IDs may be strings; unknown occurrence time is labeled unknown; exact detail hints use original ContextRail reader",
+        "PowerShell uses local literal-only AST adapter, never evaluates the tool command"
+      ]
+    },
+    {
+      "local": "work-product.mjs",
+      "source": "src/services/work-view/work-product.mjs",
+      "reuse": "unchanged source module; consumes productsFromFields, safeWebUrl, fileKind, mergeProducts",
+      "patches": [],
+      "adapter": "original task artifacts/state supply fields/sourceRef; no HTTP routes, bucket copying, git execution or automatic publication"
     }
   ],
   "runtime": "Node.js >=22.6 with --experimental-strip-types; no npm dependency or daemon",
@@ -50,6 +131,13 @@
     "../../claude_mem.py (bounded Python subprocess argv)",
     "../../client_config.py (existing JSON/TOML entries and ownership mapping)",
     "../../fault_explanations.py (existing M records to health taxonomy)",
-    "../../explicit_memory.py (existing M retain persistence)"
+    "../../explicit_memory.py (existing M retain persistence)",
+    "paths.mjs (bound project control directory)",
+    "hook-constants.mjs (SUCCESS=0 contract)",
+    "file-context-host.mjs (bound history lookup; Python owns original R atomic SQL)",
+    "../../file_literal_path.ps1 (literal-only PowerShell AST, no evaluation)",
+    "../../native_assistance.py (exact original cycle and stdout acknowledgement)",
+    "../../file_history.py (original M/R timeline and navigation)",
+    "../../deliverables.py (original artifact/task_state view)"
   ]
 }

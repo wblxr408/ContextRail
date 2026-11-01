@@ -17,7 +17,7 @@ from .store import Store
 
 
 PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "bridge-import", "bridge-packet",
-                    "bridge-receipt", "status", "checkpoints", "search", "continue", "explain",
+                    "bridge-receipt", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "result-search",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
@@ -103,7 +103,7 @@ def parser() -> argparse.ArgumentParser:
         sub.add_argument("--store")
         sub.add_argument("--response-bytes", type=int)
         sub.add_argument("--read-bytes", type=int)
-        if command in {'mcp','query','status','metrics'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
+        if command in {'mcp','query','status','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
         if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save"):
             sub.add_argument("--session", required=True)
         if command == "project-init":
@@ -242,6 +242,7 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--context-bytes", type=int, default=8192)
             sub.add_argument("--hook-bytes", type=int, default=24576)
             sub.add_argument('--query-binding',type=Path)
+            sub.add_argument('--context-assistance',action='store_true',help='Enable exact compact recovery and optional file history on supported main-session hooks')
         elif command in ("host-hook", "client-toggle"):
             sub.add_argument("--registry", type=Path, required=True)
             sub.add_argument("--client", choices=("codex", "claude"), required=True)
@@ -251,6 +252,18 @@ def parser() -> argparse.ArgumentParser:
                 group.add_argument("--disabled", action="store_true")
             else:
                 sub.add_argument("--native-memory", action="store_true", help="Existing native hook independently delivers memory; do not invoke it twice")
+        elif command == "deliverable-register":
+            sub.add_argument("--epoch",type=int,required=True)
+            sub.add_argument("--input",type=Path,required=True)
+            sub.add_argument("--allow-root",type=Path,action="append",default=[])
+        elif command == "deliverable":
+            sub.add_argument("--input",type=Path,required=True)
+        elif command == "deliverables":
+            sub.add_argument("--offset",type=int,default=0)
+            sub.add_argument("--limit",type=int,default=20)
+        elif command in ("file-history", "history-details", "history-neighborhood"):
+            if command == "file-history": sub.add_argument("--file", required=True)
+            else: sub.add_argument("--input",type=Path,required=True)
         elif command == "existing-memory-hook":
             sub.add_argument("--home", type=Path, default=Path.home() / ".codex/services/engineering-memory")
             sub.add_argument("--mode", choices=("hybrid", "text"), default="hybrid")
@@ -448,7 +461,7 @@ def project_command(args):
             result = prepare_clients(store, config, Lease(args.session, args.epoch), args.snapshot, args.output,
                                       clients=args.client or ("codex", "claude"), memory_command=args.memory_command,
                                       context_bytes=args.context_bytes, hook_bytes=args.hook_bytes, task_memory_command=args.task_memory_command,
-                                      native_memory_clients=args.native_memory_client,query_binding=args.query_binding)
+                                      native_memory_clients=args.native_memory_client,query_binding=args.query_binding,context_assistance=args.context_assistance)
             print(canonical(result))
         elif args.command.startswith("bridge-"):
             from .bridge import BridgeEvidence
@@ -490,6 +503,33 @@ def project_command(args):
                 from .intent import project_native_user
                 output=project_native_user(args.memory_home,config.workspace,args.client,args.native_session,args.event_id,start=args.start,end=args.end,output=args.output)
             print(canonical(output))
+        elif args.command in ("deliverable-register", "deliverables", "deliverable"):
+            from .deliverables import register
+            if args.command in ("deliverable-register","deliverable"):
+                try:
+                    with args.input.open('rb') as stream:raw=stream.read(65537)
+                    if len(raw)>65536:raise ValueError()
+                    options=json.loads(raw)
+                    if not isinstance(options,dict):raise ValueError()
+                except (OSError,ValueError):raise InvalidRequest('Product input must be a bounded JSON object') from None
+            if args.command=='deliverable-register':
+                output=register(store,config.scope,Lease(args.session,args.epoch),config.workspace,options,allowed_roots=args.allow_root)
+            else:
+                reader=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
+                reader.config_view=config.describe()
+                output=reader.call('context.'+args.command,{'offset':args.offset,'limit':args.limit} if args.command=='deliverables' else options)
+            print(canonical(output))
+        elif args.command in ("file-history", "history-details", "history-neighborhood"):
+            if args.command == "file-history": options={'file':args.file}
+            else:
+                try:
+                    with args.input.open('rb') as stream:raw=stream.read(32769)
+                    if len(raw)>32768:raise ValueError()
+                    options=json.loads(raw)
+                    if not isinstance(options,dict):raise ValueError()
+                except (OSError,ValueError):raise InvalidRequest('History navigation requires bounded JSON options') from None
+            reader=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
+            print(canonical(reader.call('context.'+args.command.replace('-','_'),options)))
         elif args.command in ("status", "checkpoints", "search", "continue"):
             from .navigation import TaskNavigation
             navigation = TaskNavigation(store, config, args.session)
@@ -531,7 +571,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = host_hook(args.registry, args.client, payload, native_memory=args.native_memory)
             else:
                 result = existing_memory_hook(args.home, payload, mode=args.mode)
-            print(canonical(result))
+            print(canonical(result), flush=True)
+            if args.command == "host-hook":
+                from .native_assistance import acknowledge_return
+                acknowledge_return(args.registry, args.client, payload, result)
         elif args.command == "client-apply":
             from .native_clients import apply_project_clients
             print(canonical(apply_project_clients(args.layout, args.workspace, clients=args.client or ("codex", "claude"))))

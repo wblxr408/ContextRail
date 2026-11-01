@@ -1,5 +1,7 @@
 # claude-mem 自用适配：第一阶段
 
+2026-11-01：A–D 四阶段完整使用与实际边界见 [CLAUDE_MEM_SELF_USE.md](CLAUDE_MEM_SELF_USE.md)。本文件的第一阶段/历史验收说明按其当时范围保留。
+
 2026-11-01。范围为配置稳定性、故障解释、无模型显式记录。实现与当前行为证据见 `openspec/changes/claude-mem-self-use-ergonomics/verification.md`。压缩后补注入、文件历史、交付物入口、完整界面和更多客户端仍在后续任务中。
 
 ## 实际复用与依赖

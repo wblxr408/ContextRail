@@ -225,6 +225,8 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
             hit_delivery_keys[id(hit)]=delivery
             shown=sources[hit['origin']].get('cache_hit',False) and delivery in state.delivered
             hit['already_shown']=shown
+            from .file_history import navigation
+            hit['navigation']=navigation(hit['ref'])
             if shown or duplicate:hit.update(preview='',preview_truncated=True)
         summaries={s:{k:v for k,v in sources[s].items() if k!='hits'} for s in SOURCES}
         entry={'query':text,'hits':merged,'sources':summaries,'partial':any(s['status']!='ok' or s.get('coverage',{}).get('complete') is False for s in sources.values()),

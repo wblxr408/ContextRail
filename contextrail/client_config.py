@@ -155,22 +155,33 @@ def change_clients(workspace, clients, *, layout=None):
             current = object_json(before)
             hooks = current.setdefault('hooks', {})
             if not isinstance(hooks, dict): raise InvalidRequest('Existing hooks must be an object.')
-            groups = hooks.setdefault('UserPromptSubmit', [])
-            if not isinstance(groups, list): raise InvalidRequest('Existing hook groups must be a list.')
-            old_groups = owned.get('groups', [])
-            for group in old_groups:
-                if groups.count(group) != 1:
-                    raise Conflict('Owned hook was edited or duplicated; preserve it for manual reconciliation.')
-            for group in old_groups: groups.remove(group)
-            new_groups = []
-            commands = [h.get('command') for g in groups if isinstance(g, dict) for h in g.get('hooks', []) if isinstance(h, dict)]
-            for group in desired_groups:
-                if group in groups: continue
-                if any(h.get('command') in commands for h in group['hooks']):
-                    raise Conflict('An unowned hook uses the same command with different settings.')
-                groups.append(copy.deepcopy(group));new_groups.append(group)
-            if new_groups: new_owned['groups'] = new_groups
-            after = encoded(current) if groups != object_json(before).get('hooks', {}).get('UserPromptSubmit', []) else before
+            previous = object_json(before)
+            old_events = dict(owned.get('event_groups', {}))
+            if owned.get('groups'): old_events['UserPromptSubmit'] = owned['groups']
+            wanted = hook_fragment['hooks'] if registry else {}
+            if set(wanted) - {'UserPromptSubmit','SessionStart','PostCompact','PostToolUse','PreToolUse'}:
+                raise InvalidRequest('Generated hook event is unsupported.')
+            for event in dict.fromkeys([*old_events,*wanted]):
+                groups = hooks.setdefault(event, [])
+                if not isinstance(groups,list): raise InvalidRequest('Existing hook groups must be a list.')
+                old_groups = old_events.get(event, [])
+                for group in old_groups:
+                    if groups.count(group) != 1:
+                        raise Conflict('Owned hook was edited or duplicated; preserve it for manual reconciliation.')
+                for group in old_groups: groups.remove(group)
+                new_groups = []
+                commands = [h.get('command') for g in groups if isinstance(g,dict) for h in g.get('hooks',[]) if isinstance(h,dict)]
+                for group in wanted.get(event, []):
+                    if not isinstance(group,dict) or not isinstance(group.get('hooks'),list):
+                        raise InvalidRequest('Generated hook group is invalid.')
+                    if group in groups: continue
+                    if any(h.get('command') in commands for h in group['hooks']):
+                        raise Conflict('An unowned hook uses the same command with different settings.')
+                    groups.append(copy.deepcopy(group));new_groups.append(group)
+                if new_groups:
+                    if event=='UserPromptSubmit': new_owned['groups']=new_groups
+                    else: new_owned.setdefault('event_groups',{})[event]=new_groups
+            after = encoded(current) if current != previous else before
             plans.append((hook_path, before, after))
             if registry: receipt['clients'][client] = new_owned
             else: receipt['clients'].pop(client, None)

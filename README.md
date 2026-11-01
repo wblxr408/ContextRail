@@ -1,5 +1,7 @@
 # ContextRail
 
+2026-11-01：A–D 四阶段完整使用与实际边界见 [CLAUDE_MEM_SELF_USE.md](CLAUDE_MEM_SELF_USE.md)。本文件的第一阶段/历史验收说明按其当时范围保留。
+
 claude-mem 第一阶段适配的配置升级/回滚/移除、故障解释与无模型显式记录见 [CLAUDE_MEM_STAGE1_USE.md](CLAUDE_MEM_STAGE1_USE.md)。原 TS 切片按需运行，无新增后台服务。
 
 工作现场、任务变化和在途动作恢复见 [WORKSCENE_USE.md](WORKSCENE_USE.md)（E02/E03/B08）。

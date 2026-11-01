@@ -16,12 +16,12 @@ async def run_stdio(tools: ContextTools):
         from mcp.server.stdio import stdio_server
     except ImportError:
         raise InvalidRequest("Install the optional MCP adapter: pip install 'contextrail[mcp]'.") from None
-    server = Server("contextrail")
+    sdk_v2 = not hasattr(Server, "list_tools")
+    server = None
     from uuid import uuid4
     generation=uuid4().hex
     capabilities = HostCapabilities.read_only()
 
-    @server.list_tools()
     async def list_tools():
         definitions = ContextTools.definitions() + [{"name": "context.capabilities",
             "description": "Report trusted adapter capabilities and explicit unknown host controls.",
@@ -30,15 +30,18 @@ async def run_stdio(tools: ContextTools):
             "input_schema": {"type": "object", "properties": {"snapshot": {"type": "string", "minLength": 1},
                 "budget": {"type": "integer", "minimum": 1, "maximum": tools.max_read_bytes}},
                 "required": ["snapshot"], "additionalProperties": False}})
-        return [types.Tool(name=item["name"], description=item["description"], inputSchema=item["input_schema"],
-                           annotations=types.ToolAnnotations(readOnlyHint=True, destructiveHint=False,
-                                                             idempotentHint=True, openWorldHint=False))
-                for item in definitions]
+        result=[]
+        for item in definitions:
+            annotations=types.ToolAnnotations(**({'read_only_hint':True,'destructive_hint':False,'idempotent_hint':True,'open_world_hint':False}
+                if sdk_v2 else {'readOnlyHint':True,'destructiveHint':False,'idempotentHint':True,'openWorldHint':False}))
+            result.append(types.Tool(name=item['name'],description=item['description'],annotations=annotations,
+                **({'input_schema':item['input_schema']} if sdk_v2 else {'inputSchema':item['input_schema']})))
+        return result
+
 
     # ContextTools validates every field and produces our stable error envelope;
     # the SDK's default validator returns free-form, non-JSON errors instead.
-    @server.call_tool(validate_input=False)
-    async def call_tool(name, arguments):
+    async def call_tool(name, arguments, request_id):
         try:
             def invoke():
                 if name=='context.capabilities':
@@ -56,16 +59,29 @@ async def run_stdio(tools: ContextTools):
             from .accounting import HostAccounting
             if name not in {'context.metrics','context.efficiency'}:
                 result=HostAccounting(tools.store,tools.scope,tools.session_id).call_tool(tools,name,arguments,
-                    observation_id='mcp-'+generation+'-'+str(server.request_context.request_id),invoke=invoke)
+                    observation_id='mcp-'+generation+'-'+str(request_id),invoke=invoke)
             else:result=invoke()
             return types.CallToolResult(content=[types.TextContent(type='text',text=canonical(result))])
         except RailError as exc:
             error = {"code": exc.code, "message": str(exc)}
         except sqlite3.Error:
             error = {"code": "storage_error", "message": "Local storage is unavailable."}
-        return types.CallToolResult(content=[types.TextContent(type="text", text=canonical({"error": error}))], isError=True)
+        return types.CallToolResult(content=[types.TextContent(type="text", text=canonical({"error": error}))], **({"is_error":True} if sdk_v2 else {"isError":True}))
 
+    if sdk_v2:
+        async def on_list_tools(ctx,params):
+            return types.ListToolsResult(tools=await list_tools())
+        async def on_call_tool(ctx,params):
+            return await call_tool(params.name,params.arguments or {},ctx.request_id)
+        server=Server('contextrail',version='0.1.0',on_list_tools=on_list_tools,on_call_tool=on_call_tool)
+        initialization=server.create_initialization_options()
+    else:
+        server=Server('contextrail')
+        server.list_tools()(list_tools)
+        async def legacy_call(name,arguments):
+            return await call_tool(name,arguments,server.request_context.request_id)
+        server.call_tool(validate_input=False)(legacy_call)
+        initialization=InitializationOptions(server_name='contextrail',server_version='0.1.0',
+            capabilities=server.get_capabilities(NotificationOptions(),{}))
     async with stdio_server() as (read, write):
-        await server.run(read, write, InitializationOptions(
-            server_name="contextrail", server_version="0.1.0",
-            capabilities=server.get_capabilities(NotificationOptions(), {})))
+        await server.run(read,write,initialization)

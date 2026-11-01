@@ -4,7 +4,7 @@
 
 详细来源与已有能力去重见 ../../../docs/claude-mem-self-use-todo.md。上游固定 b80b29bc49d08a71312f44b8feacb2e7585edff4，已有 63 份研究切片。原 M/main、Bridge 要求与 Rail task/version 已有实现；E04/E07 继续 causal-recovery-history。
 
-用户已明确：优先稳定性、故障解释、压缩后补注入、文件相关历史、交付物入口；完整界面和更多客户端后置；尽量直接复用现成代码。修订 3：本轮已进入第一阶段实施，后续阶段仍为规划。
+用户已明确：优先稳定性、故障解释、压缩后补注入、文件相关历史、交付物入口；完整界面和更多客户端后置；尽量直接复用现成代码。修订 4：用户目标已扩展为完整完成 A–D 四阶段；用户明确确认后置项仍按需启用。
 
 ## Goals / Non-Goals
 
@@ -16,7 +16,7 @@
 
 **Non-Goals:**
 
-- 本轮仅实施第一阶段；不展开补注入、文件历史、交付物、完整页面和更多客户端。
+- 本轮完整完成 A–D；完整页面、更多客户端及后置 P1/P2 维持按需启用。
 - 不将原语言差异当作全部重写的理由，也不为了复用小模块默认运行整套 claude-mem。
 - 不先做完整 My Work、更多客户端、云同步或自动整理个人目标。
 
@@ -94,3 +94,37 @@ CM08 完整 My Work、CM11 人工查看、CM21 页面连接提示列为后续可
 - 配置回执只保存自有 MCP 值/精确 TOML 块和 Hook 组。既有等值但无回执条目保持未认领；不按名字推断归属。新安装开始形成回执，升级/移除必须与原回执一致。全文件替换复用上游事务；原备份目录补 restore-plan.json。
 - 状态只读原 jobs/job_control/meta 与 task index/prepared；原字段存在才分类。未知 provider 字符串不进入提示，过期等待不证明恢复，不执行健康探测或重启。project.sources 只从可信 CLI/MCP 宿主挂载；原 raw capture、model consumption 边界保留。
 - memory-save 只接显式 user 来源，调用原 MemoryRuntime.retain(use_models=False)，相同稳定来源重放一个效果；返回源文件和已有确定性摘录/text recall 接口。该入口不调用 observer、embedding、语义归纳或新记忆库。认证失败等原因仅在原队列真实记录相应种类时可解释，不通过文本猜测新增权威状态。
+
+## D9 原生补注入与原事件身份
+
+2026-11-01 核对官方 Codex hooks schema 和 Claude hooks 文档：PostCompact 不能承载 additionalContext，SessionStart(compact)/PreToolUse/PostToolUse/UserPromptSubmit 可返回。主会话原 SessionStart、PostToolUse、UserPromptSubmit 接上游 postCompactHandler 与 mark/take；不注册新的采集器。
+
+原 QueryBinding 必须明确 client/native_session/workspace/M home。触发记录 pending，不读取/归纳 compact_summary；原监听器 normalized_events 中 context.compacted 的 event_id+sequence 是真实 cycle，未捕获到则明确 awaiting_original_compaction。来源重放不会重新登记 returned，下一次真实 cycle 可以再次补入。
+
+在原 Rail DB 中以 scope/client/native_session/base_snapshot/source_event 保存 prepared/returned 和 60 秒 attempt claim，既有 events 保存审计。上游 marker 只用于触发，不是权威送达账本。prepare 后进程退出，原 DB 的未确认状态可在 claim 过期后重试；返回后 stdout flush 才记录 returned，模型消费始终未知。发送与回执之间的进程损失具有传输不确定性，可恢复重试不承诺物理 exactly-once。
+
+必需 packet 调用原 Bridge.refresh(exact base) 和现有预算渲染，不选择其他项目最新快照。源失效、预算失败保留 pending 并阻止当前继续；新 attempt 通过 CAS 防止迟到回执覆盖。新的受管 Hook 事件继续同一配置事务与精确撤销，不更改原生 trust。
+
+官方来源：[Codex SessionStart schema](https://github.com/openai/codex/blob/main/codex-rs/hooks/schema/generated/session-start.command.output.schema.json)、[Codex PostCompact schema](https://github.com/openai/codex/blob/main/codex-rs/hooks/schema/generated/post-compact.command.input.schema.json)、[Claude hooks](https://code.claude.com/docs/en/hooks)。这是源契约与真实命令 stdin/stdout 验证，不声称当前打开的桌面会话已热更新。
+
+## D10 文件历史使用原索引与原子 gate
+
+直接保留 file-context 的 handler、分组/排序、路径形式和时间格式，移除全文件 deny/智能工具重定向、重复 memorySearch 与 worker/Bun 创建。Python 只把既有 M/R timeline 变成上游 ObservationRow，原路径函数生成绝对、工作区相对及 home 相对查询形式。未知发生时间显示 unknown，不补造历史时间。
+
+原 file-context-dedupe 的 GATE_TABLE_DDL/CLAIM_GATE_SQL 由原 R SQLite 连接执行。scope+client+native_session 编入 session key，规范文件路径+原来源版本集合映射为单调 epoch；不复制记忆正文到 gate，不按正文 hash 判重，不自动 TTL 清扫。最终渲染满足原字节/字符预算后才以原 SQL 原子认领。
+
+PowerShell 与上游 Bash shell-quote 不是同一语法。本机仅使用原生 PowerShell AST 解析单条 Get-Content 的字面路径，不执行输入命令；变量、管线、表达式和不支持参数明确跳过。其余结构化 Read/Edit 与上游 MCP path 提取保持直接路径。非 Windows 解析器缺失时只跳过可选增强。
+
+context.file_history/history_details/history_neighborhood 和对应 CLI 沿用固定宿主绑定。旧三源查询的 context.get/memory.stream_get/basic-memory.read_note refs 可直接进入详情；M note 不提供精确历史版本或事件锚点时明确标注，不能假造其时间邻域。部分来源不可用不吞掉其他可读项，普通浏览不领取任务、不改租约。
+
+## D11 交付物沿用原 artifact 与 task_state
+
+work-product.mjs 整个原模块保持不改，实际消费 productsFromFields/safeWebUrl/fileKind/mergeProducts。显式宿主登记为原 Rail deliverables/<id>/record 版本化 artifact，同一 fencing 事务中核对 source Ref、expected revision 和根目录，原 events 保存登记事件；未建立第二个产物知识库或任务状态权威。原 task_state 字段作为声明投影，不把已有源接口重写。
+
+打开入口使用绝对路径和 HTTP(S) 链接；不部署上游 HTTP 路由、bucket 复制或发布器。旧 record_ref 可精确回读，来源版本与当前头不同明确标历史。外部文件只观察文件身份/大小/mtime/ctime，metadata_matches 不等于正文验证；缺失/改变保留登记位置。仅 URL 永远不提升为发布成功。
+
+## D12 当前 MCP 环境的薄兼容修复
+
+真实新交付物 stdio 调用发现本机共享 Python 的 SDK 2 不再提供 Server.list_tools 装饰器，旧挂载在处理业务前退出。比较局部隔离强制 1.x 与薄兼容：前者令已有客户端路径失效并引入额外运行环境；后者仅在注册/字段命名边界分支，原读取/参数验证/计量共用，因此选择后者。MCP optional 范围为 >=1.28,<3，未更改全局依赖。功能、部署兼容、维护和可靠性是决定维度；速度/内存/费用未做基准，生态/安全没有新增第三方服务器或权限，语言/库退出策略保留原官方 SDK。
+
+SDK 2 采用官方 on_list_tools/on_call_tool、snake_case types 和 ctx.request_id；1.x 保留原方法。当前 SDK 2 与隔离 SDK 1.30 均用真实工具发现、列表、精确详情和拒绝 scope override 验证；没有以握手/启动替代业务。依据 [官方 migration](https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/docs/migration.md)。

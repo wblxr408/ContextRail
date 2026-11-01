@@ -26,6 +26,16 @@ def status(tools,*,snapshot=None,budget=8192):
             'capabilities':HostCapabilities.read_only().describe(),
             'process_liveness':'not_observed_by_this_status_read','model_calls':0}
         result['diagnostics']=[]
+        assistance={'compact':{},'file_history':{}}
+        allowed={'client','native_session','source_event','reason','snapshot','base_snapshot','gate_epoch','file','model_consumption','transport'}
+        rows=tools.store.db.execute("SELECT kind,at,metadata FROM events WHERE scope=? AND (kind LIKE 'native_compact.%' OR kind LIKE 'native_file_history.%') ORDER BY sequence DESC LIMIT 20",(tools.scope.key,)).fetchall()
+        for observed in rows:
+            group='compact' if observed['kind'].startswith('native_compact.') else 'file_history'
+            state='last_'+observed['kind'].rsplit('.',1)[-1]
+            if state not in assistance[group]:
+                metadata=json.loads(observed['metadata'])
+                assistance[group][state]={'observed_at':observed['at'],**{k:v for k,v in metadata.items() if k in allowed}}
+        result['native_assistance']=assistance
         result['effective_config']={'source':'trusted_host_binding' if binding else 'not_configured',
             'memory_home':str(binding.memory_home) if binding and binding.memory_home else None,
             'memory_mode':binding.memory_mode if binding else None,
@@ -83,6 +93,8 @@ def status(tools,*,snapshot=None,budget=8192):
     result['display_truncated']=False
     while len(canonical(result).encode())>budget:
         if result['source_errors']:result['source_errors'].pop();result['display_truncated']=True;continue
+        if result['native_assistance']:
+            result['native_assistance']={};result['display_truncated']=True;continue
         if len(result['diagnostics'])>1:
             result['diagnostics'].pop();result['display_truncated']=True;continue
         if result['effective_config'].get('project'):

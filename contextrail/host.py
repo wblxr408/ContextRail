@@ -24,6 +24,19 @@ class ContextTools:
         self.store.session(self.scope, self.session_id)
         if not isinstance(arguments, dict):
             raise InvalidRequest("Tool arguments must be an object.")
+        if name in {'context.deliverables','context.deliverable'}:
+            from .deliverables import list_products,detail
+            if name=='context.deliverables':
+                self._keys(arguments,required=set(),optional={'offset','limit','budget'})
+                return list_products(self,**{**arguments,'budget':arguments.get('budget',min(8192,self.max_read_bytes))})
+            self._keys(arguments,required=set(),optional={'record_ref','task_state_id','index','budget'})
+            return detail(self,**{**arguments,'budget':arguments.get('budget',min(8192,self.max_read_bytes))})
+        if name in {'context.file_history','context.history_details','context.history_neighborhood'}:
+            from . import file_history as history
+            function={'context.file_history':history.file_history,'context.history_details':history.history_details,'context.history_neighborhood':history.history_neighborhood}[name]
+            required={'context.file_history':{'file'},'context.history_details':{'refs'},'context.history_neighborhood':{'ref'}}[name]
+            self._keys(arguments,required=required,optional={'budget','limit'} if name!='context.history_details' else {'budget'})
+            return function(self,**{**arguments,'budget':arguments.get('budget',min(8192,self.max_read_bytes))})
         if name=='context.metrics':
             from .accounting import metrics
             self._keys(arguments,required=set(),optional={'offset','limit','budget'})
@@ -175,6 +188,16 @@ class ContextTools:
                    'trace_offset':{'type':'integer','minimum':0},'trace_limit':{'type':'integer','minimum':1,'maximum':20},
                    'requested':{'type':'array','maxItems':100,'items':{'type':'object','properties':{'name':{'type':'string'},'revision':{'type':'integer'},'start':{'type':'integer'},'end':{'type':['integer','null']}},'required':['name','revision'],'additionalProperties':False}}},
                    'required':['snapshot'],'additionalProperties':False}} for name in ('context.brief','context.explain')],
+            {'name':'context.deliverables','description':'Find bounded source-bound registered outputs and original work-product declarations; local metadata and remote publication are distinct.',
+             'input_schema':{'type':'object','properties':{'offset':{'type':'integer','minimum':0,'maximum':10000},'limit':{'type':'integer','minimum':1,'maximum':100},'budget':{'type':'integer','minimum':1024,'maximum':65536}},'additionalProperties':False}},
+            {'name':'context.deliverable','description':'Open an exact output source/version with its original location, change/missing state and source reader; no publishing or claiming.',
+             'input_schema':{'type':'object','properties':{'record_ref':{'type':'object'},'task_state_id':{'type':'string','minLength':1},'index':{'type':'integer','minimum':0},'budget':{'type':'integer','minimum':1024,'maximum':65536}},'additionalProperties':False}},
+            {'name':'context.file_history','description':'Read bounded source-linked history for an exact file in the trusted worktree; never changes tool permissions or injection gates.',
+             'input_schema':{'type':'object','properties':{'file':{'type':'string','minLength':1,'maxLength':4096},'budget':{'type':'integer','minimum':1024,'maximum':65536},'limit':{'type':'integer','minimum':1,'maximum':40}},'required':['file'],'additionalProperties':False}},
+            {'name':'context.history_details','description':'Read selected exact task/native history refs; each failed source remains an independent result. No latest-source substitution.',
+             'input_schema':{'type':'object','properties':{'refs':{'type':'array','minItems':1,'maxItems':10,'items':{'type':'object'}},'budget':{'type':'integer','minimum':1024,'maximum':65536}},'required':['refs'],'additionalProperties':False}},
+            {'name':'context.history_neighborhood','description':'Read the occurrence-time neighborhood of an exact source ref without task claiming or lease changes.',
+             'input_schema':{'type':'object','properties':{'ref':{'type':'object'},'budget':{'type':'integer','minimum':1024,'maximum':65536},'limit':{'type':'integer','minimum':1,'maximum':40}},'required':['ref'],'additionalProperties':False}},
             {'name':'context.query','description':'Batch search task evidence, explicitly bound native events and existing main memory. Source failures and history roles remain explicit; refresh and exact refs stay available.',
              'input_schema':{'type':'object','properties':{
                  'queries':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':1,'maxLength':1024}},
