@@ -204,6 +204,7 @@ def _code_mode_command(value):
 
 def literal_paths(payload):
     tool=payload.get('tool_name','');args=payload.get('tool_input',{})
+    if not isinstance(tool,str):return []
     if tool in {'exec','functions.exec'}:
         command=_code_mode_command(args.get('input',args.get('code')) if isinstance(args,dict) else args)
         if command is None:return []
@@ -221,6 +222,9 @@ def literal_paths(payload):
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
             return json.loads(r.stdout).get('paths',[]) if r.returncode==0 else []
         except (OSError,ValueError,subprocess.TimeoutExpired):return []
+    # Upstream extractFromMcp rejects every other tool name immediately.
+    # Keep that negative result without launching its Node process.
+    if not re.fullmatch(r'mcp__.+__(read|view|cat)(?:_file|_files)?',tool):return []
     return invoke('file-paths',tool=tool,input=args,cwd=payload['cwd'])['paths']
 
 

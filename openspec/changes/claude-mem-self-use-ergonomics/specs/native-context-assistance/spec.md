@@ -17,6 +17,10 @@
 - **WHEN** registry 显式启用 current_hook 绑定模式且可信主会话 Hook 在选定工作区触发
 - **THEN** 本次使用 payload 精确 client/session 执行增强，不选择最近日志或改变静态历史白名单，未绑定子会话不获得该能力
 
+#### Scenario: 没有待恢复内容的普通事件
+- **WHEN** 精确主会话不存在压缩 marker 且没有需要恢复的未确认交付
+- **THEN** 普通任务提交与工具后事件不依赖可选 Node 处理器；非文件工具不创建文件处理子进程，真实 marker 或未确认状态仍保留原恢复流程
+
 #### Scenario: 下一可用事件补充一次
 - **WHEN** 已绑定主会话收到压缩事件且下一事件允许返回上下文
 - **THEN** 返回当前有效要求、最后纠正与精确回读入口，并区分 pending、prepared 和 returned 记录

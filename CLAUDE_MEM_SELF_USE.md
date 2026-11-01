@@ -83,6 +83,8 @@ python -m contextrail deliverable --workspace D:/my-project --task my-task --ses
 
 ## 当前交付边界
 
+本机内存测量与优化见 openspec/changes/claude-mem-self-use-ergonomics/memory-verification.md。没有 marker 时采用与固定上游命名一致的负向快速判断，普通 Hook 不再启动 Node；真实标记检查/写入/消费仍复用原 TS。非文件工具跳过原本必定返回空的文件提取调用。不增加缓存、监听器或常驻进程，不更改原 Hook 命令及信任。该优化不减少模型/向量加载内存，也不承诺所有事件均无短时峰值。
+
 源码在本机隔离任务分支实现并同步到 D:/ContextRail；保留其他在途改动。此前 cloud exec 实际返回环境不可用，本轮在本机完成宿主验收。用户追加启用后，已显式接管原 v1 项目接线，Codex 通过原生 /hooks 审阅启用新增事件；没有直接写信任 hash、替换账户/模型或改原 M app。其他工作区需绑定其自身任务，不能套用本项目来源。实际启用结果及限制见 openspec/changes/claude-mem-self-use-ergonomics/activation-verification.md。
 
 只执行本批新增行为契约、用户追加要求的真实客户端流程及构建/schema 检查；旧回归套件、smoke、版本/import/启动/健康探针、文件存在性或 hash/措辞检查、广泛费用/内存基准均未运行。原 A–D 实现阶段没有模型调用；追加启用阶段使用既有模型与登录完成原生调用。Basic Memory 写工具仍不可用，待入库经验保留本地草稿，不声称索引确认。

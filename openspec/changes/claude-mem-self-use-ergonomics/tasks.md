@@ -41,6 +41,14 @@
 
 5.4 仅余 Codex 真实压缩恢复：两端入口/新工具/文件历史及 Claude 实际压缩已验证；Codex 原模型远程 compact 被 model_not_found 拒绝，当前 CLI 禁止覆盖内置 openai provider 的能力。未更换模型/账号/provider 来制造通过，详见 activation-verification.md。原 main 召回另有 timed_out/failed，服务及 Hook 保留，未声称修复。
 
+## 6. 实测内存增量（用户追加）
+
+- [x] 6.1 记录当前主机可用内存和既有组件归属；用相同真实数据 Hook 请求测量进程树工作集、私有提交与耗时，排除测量进程自身。
+- [x] 6.2 无 pending marker 的普通事件以及非文件工具不启动不必要的 Node；真实 marker、已准备但未确认的状态仍走原恢复流程，保留上游 mark/take/正向检查。
+- [x] 6.3 本次最小行为先 RED→GREEN，同一负载复测；目标普通 PostToolUse 进程树峰值工作集低于 60 MiB，不增常驻进程、不删 Hook、不改原记忆服务。
+
+第6项结果见 memory-verification.md。普通 PostToolUse 峰值从 93.84–109.39 MiB 降到 34.93–36.05 MiB；非文件 PreToolUse 从约106降到约37 MiB。真实文件读取仍约135–137 MiB，未宣称全部路径都有相同收益。5.4 原限制保持。
+
 - P1 支撑项 CM04 完整配置预览、CM07/CM09 更多导航、CM13 全面数据备份、CM20 额外缓存按真实缺口选；没有反向依赖到首批。
 - 完整界面 CM08/CM11/CM21、其他 P2/按需条目仍在主清单；不是首批 apply 自动展开的任务。未来启用时先保留上游组件，匹配我方 API。
 - Codex/Claude 之外客户端在实际使用后再选择对应上游 adapter/installer，本批不建通用多客户端框架。

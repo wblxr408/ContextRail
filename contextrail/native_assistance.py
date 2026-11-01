@@ -49,6 +49,15 @@ def marker(binding,client,session,operation):
     root=Path(binding['workspace']).resolve()
     control=target(root,'.context-rail')
     key=canonical([Scope(**binding['scope']).key,client,session,binding['base_snapshot']])
+    if operation=='has':
+        from hashlib import sha256
+        # The host key is always a JSON array (never SAFE_MARKER_KEY). Match
+        # upstream session-marker-files.ts only for a negative fast path.
+        # Positive/uncertain checks and all mutation still use the TS source.
+        path=control/'state/codex-compaction-pending'/('sha256-'+sha256(key.encode('utf-8')).hexdigest())
+        try:
+            if not path.exists():return {'pending':False}
+        except OSError:pass
     return invoke('compact-marker',root=str(control),session=key,operation=operation)
 
 
