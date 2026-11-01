@@ -7,3 +7,5 @@ Licensed under the Apache License, Version 2.0.
 
 If other attributions are required by dependencies or included code, add them here.
 
+ContextRail activation compatibility: an existing parent directory is not recreated,
+because Node recursive mkdir on an existing Windows drive root can return EPERM.

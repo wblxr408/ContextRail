@@ -39,7 +39,13 @@ python -m contextrail client-prepare --workspace D:/my-project --task my-task --
 python -m contextrail client-apply --workspace D:/my-project --layout D:/my-project/.context-rail/clients/v2
 ```
 
-只有该客户端已有独立原生记忆 Hook 时才填 native-memory-client；否则沿用原 memory-command 配置。新布局仍受原客户端 Hook 信任和项目批准控制。旧无归属回执条目保持未认领，不能因为名字相同就覆盖。原有布局默认行为保持原入口，新增辅助通过显式 context-assistance 启用。
+只有该客户端已有独立原生记忆 Hook 时才填 native-memory-client；否则沿用原 memory-command 配置。新布局仍受原客户端 Hook 信任和项目批准控制。旧无归属回执条目默认保持未认领；用户显式提供旧生成布局时，可使用 `client-apply --workspace <project> --layout <desired-layout> --adopt-layout <old-generated-layout>` 接管精确一致的旧服务器/Hook。旧值有人工修改或重复时整批报冲突，原配置不写入。
+
+已有任务需要用于新原生主会话时，可在可信 registry 的对应 binding 设置 `context_assistance: true`、绝对 `query_binding` 路径和 `native_session_binding: "current_hook"`。当前身份只来自原生 Hook payload，与精确任务和工作区一起使用；不会猜测最新日志或改写静态历史白名单。默认模式仍是 explicit。自动文件提醒排除当前会话自己的读取记录，避免刚读文件又触发新历史；固定历史会话和 R 任务来源仍可补入，显式 MCP 历史读取不受此自动提醒过滤影响。
+
+Claude 需要压缩传输时，保留所有选中正文及精确 Ref，仅省略重复的每条展示元数据，标记 transport_view 并提供完整 context.packet 入口。恢复来源 metadata 与正文共同参与预算选择。必需要求仍由原编译器判断，不裁剪成摘要。PostCompact 不设置无效的 additionalContextLimit，避免原生配置告警。
+
+增强启用后，普通任务包也在 stdout flush 后登记 native_context.returned；同会话同快照后续提交保留原记忆结果，跳过重复任务包。新快照或明确的新压缩来源仍会返回。Codex 代码模式支持已观察到的 `text(await tools.exec_command({...}));` 和直接 await 形式，仅接受对象内 JSON 字面量值；Get-Content 支持字面量路径及 TotalCount/Head/Tail 整数，动态表达式或复杂包装继续跳过，不执行解析内容。
 
 PostCompact 只标记。原监听器的准确 context.compacted 尚未入库时显示 awaiting_original_compaction；后续可返回上下文的事件再尝试。原源失效、租约不符或预算不足明确报缺口，不选其他最新快照。控制状态保存在原 Rail DB；上游 marker 被删除不能证明送达。stdout flush 后记录 returned，模型实际使用仍 unknown。准备后进程损失可在 60 秒 claim 到期后恢复；发送与回执之间的损失保留传输不确定性，不声称物理 exactly-once。
 
@@ -77,6 +83,6 @@ python -m contextrail deliverable --workspace D:/my-project --task my-task --ses
 
 ## 当前交付边界
 
-源码在本机隔离任务分支实现并同步到 D:/ContextRail；保留其他在途改动。此前 cloud exec 实际返回环境不可用，本轮没有云端任务。未修改原生 trust、账户、模型或原 M app，未声称已打开客户端热更新。用户可按上面命令启用新的受管布局；旧无回执配置的冲突不会被强行覆盖。
+源码在本机隔离任务分支实现并同步到 D:/ContextRail；保留其他在途改动。此前 cloud exec 实际返回环境不可用，本轮在本机完成宿主验收。用户追加启用后，已显式接管原 v1 项目接线，Codex 通过原生 /hooks 审阅启用新增事件；没有直接写信任 hash、替换账户/模型或改原 M app。其他工作区需绑定其自身任务，不能套用本项目来源。实际启用结果及限制见 openspec/changes/claude-mem-self-use-ergonomics/activation-verification.md。
 
-只执行本批新增行为契约与构建/schema 检查；旧回归套件、smoke、版本/import/启动/健康探针、文件存在性或 hash/措辞检查、付费模型与广泛费用/内存基准均未运行。Basic Memory 写入工具本会话不可用，待入库经验保留本地草稿，不声称索引确认。
+只执行本批新增行为契约、用户追加要求的真实客户端流程及构建/schema 检查；旧回归套件、smoke、版本/import/启动/健康探针、文件存在性或 hash/措辞检查、广泛费用/内存基准均未运行。原 A–D 实现阶段没有模型调用；追加启用阶段使用既有模型与登录完成原生调用。Basic Memory 写工具仍不可用，待入库经验保留本地草稿，不声称索引确认。

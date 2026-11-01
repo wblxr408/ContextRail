@@ -13,7 +13,8 @@
         "expected-content conflict check",
         "bounded Windows rename retry",
         "nested stage/backup parents",
-        "import original renameWithWindowsRetry from selected atomic-json.ts"
+        "import original renameWithWindowsRetry from selected atomic-json.ts",
+        "skip recursive mkdir when the parent already exists; Node Windows drive-root EPERM observed during D:/ContextRail activation"
       ]
     },
     {

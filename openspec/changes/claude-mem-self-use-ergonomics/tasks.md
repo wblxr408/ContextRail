@@ -32,6 +32,15 @@
 
 ## Workflow follow-up
 
+## 5. 现有客户端启用（用户追加）
+
+- [x] 5.1 以旧生成布局为归属证据，显式接管精确匹配的旧 MCP/Hook；受管升级、重放和撤销均保留第三方配置，冲突整批不写入。
+- [x] 5.2 在用户选定任务/工作区内允许可信主会话 Hook 精确绑定当前 session；不选择最新日志、不扩权子会话，保留静态历史来源绑定。
+- [x] 5.3 升级本机 Codex/Claude 现有 v1 接线，保留全局 main/ATR 和 Claude 一次组合；原生信任由客户端管理。
+- [ ] 5.4 用两端真实客户端验证任务入口、新工具、文件历史与压缩恢复，记录 stdout 回执/模型观察边界和去重证据，交付备份与恢复入口。
+
+5.4 仅余 Codex 真实压缩恢复：两端入口/新工具/文件历史及 Claude 实际压缩已验证；Codex 原模型远程 compact 被 model_not_found 拒绝，当前 CLI 禁止覆盖内置 openai provider 的能力。未更换模型/账号/provider 来制造通过，详见 activation-verification.md。原 main 召回另有 timed_out/failed，服务及 Hook 保留，未声称修复。
+
 - P1 支撑项 CM04 完整配置预览、CM07/CM09 更多导航、CM13 全面数据备份、CM20 额外缓存按真实缺口选；没有反向依赖到首批。
 - 完整界面 CM08/CM11/CM21、其他 P2/按需条目仍在主清单；不是首批 apply 自动展开的任务。未来启用时先保留上游组件，匹配我方 API。
 - Codex/Claude 之外客户端在实际使用后再选择对应上游 adapter/installer，本批不建通用多客户端框架。

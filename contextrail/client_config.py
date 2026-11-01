@@ -71,13 +71,55 @@ def locked(root):
         path.unlink()
 
 
-def change_clients(workspace, clients, *, layout=None):
+def legacy_ownership(root, layout, client):
+    """Explicit host-supplied old layout is evidence, never a name-based claim."""
+    from .native_clients import read_registry, _read_json
+    layout = Path(layout).resolve()
+    bindings = read_registry(layout/'registry.json')['bindings']
+    if len([b for b in bindings if b['client']==client and Path(b['workspace']).resolve()==root]) != 1:
+        raise InvalidRequest('Legacy layout must bind exactly this client and workspace.')
+    if client=='codex':
+        fragment=(layout/'codex.config.toml').read_bytes().decode('utf-8')
+        value=tomllib.loads(fragment)
+        server=value.get('mcp_servers',{}).get('contextrail')
+        if not isinstance(server,dict) or value!={'mcp_servers':{'contextrail':server}}:
+            raise InvalidRequest('Legacy TOML must contain exactly the generated server.')
+        raw=read(target(root,'.codex/config.toml'))
+        text=raw.decode('utf-8') if raw is not None else ''
+        current=tomllib.loads(text)
+        block=MARKER+fragment if MARKER+fragment in text else fragment
+        if current.get('mcp_servers',{}).get('contextrail')!=server or text.count(block)!=1:
+            raise Conflict('Legacy MCP entry differs from the supplied layout; no configuration was claimed.')
+        owned={'server':server,'block':block}
+        hooks=_read_json(layout/'codex.hooks.json')['hooks']
+        current_hooks=object_json(read(target(root,'.codex/hooks.json'))).get('hooks',{})
+    else:
+        server=_read_json(layout/'claude.mcp.json')['mcpServers']['contextrail']
+        if object_json(read(target(root,'.mcp.json'))).get('mcpServers',{}).get('contextrail')!=server:
+            raise Conflict('Legacy MCP entry differs from the supplied layout; no configuration was claimed.')
+        owned={'server':server}
+        hooks=_read_json(layout/'claude.settings.json')['hooks']
+        current_hooks=object_json(read(target(root,'.claude/settings.local.json'))).get('hooks',{})
+    if not isinstance(hooks,dict) or set(hooks)-{'UserPromptSubmit','SessionStart','PostCompact','PostToolUse','PreToolUse'}:
+        raise InvalidRequest('Legacy hook events are invalid.')
+    for event,groups in hooks.items():
+        current=current_hooks.get(event,[]) if isinstance(current_hooks,dict) else []
+        if not isinstance(groups,list) or not groups or not isinstance(current,list) or any(current.count(g)!=1 for g in groups):
+            raise Conflict('Legacy Hook differs or is duplicated; no configuration was claimed.')
+        if event=='UserPromptSubmit':owned['groups']=copy.deepcopy(groups)
+        else:owned.setdefault('event_groups',{})[event]=copy.deepcopy(groups)
+    return owned
+
+
+def change_clients(workspace, clients, *, layout=None, adopt_layout=None):
     from .native_clients import CLIENTS, read_registry, _read_json
     root = Path(workspace).resolve()
     clients = tuple(clients)
     if not clients or len(set(clients)) != len(clients) or set(clients) - set(CLIENTS):
         raise InvalidRequest('Choose supported distinct clients.')
     registry = read_registry(Path(layout) / 'registry.json') if layout else None
+    if adopt_layout is not None and registry is None:
+        raise InvalidRequest('Legacy adoption requires an explicit desired layout.')
     with locked(root):
         receipt_path = target(root, RECEIPT)
         original_receipt = read(receipt_path)
@@ -87,6 +129,8 @@ def change_clients(workspace, clients, *, layout=None):
         plans = []
         for client in clients:
             owned = receipt['clients'].get(client, {})
+            if adopt_layout is not None and not owned:
+                owned = legacy_ownership(root,adopt_layout,client)
             if registry:
                 matches = [b for b in registry['bindings'] if b['client'] == client and Path(b['workspace']).resolve() == root]
                 if len(matches) != 1:
@@ -185,7 +229,7 @@ def change_clients(workspace, clients, *, layout=None):
             plans.append((hook_path, before, after))
             if registry: receipt['clients'][client] = new_owned
             else: receipt['clients'].pop(client, None)
-        receipt_bytes = encoded(receipt)
+        receipt_bytes = original_receipt if original_receipt is not None and object_json(original_receipt)==receipt else encoded(receipt)
         if original_receipt is not None or registry:
             plans.append((receipt_path, original_receipt, receipt_bytes))
         changed = [(p,b,a) for p,b,a in plans if b != a]

@@ -55,7 +55,8 @@ export function replaceOwnedFiles(destination: string, files: OwnedFile[]): void
     if (current && !current.isFile()) throw new Error('Owned destination is not a regular file: ' + join(destination, file.name));
   }
 
-  mkdirSync(dirname(destination), { recursive: true });
+  // Node on Windows can reject recursive mkdir of an existing drive root.
+  if (!statIfPresent(dirname(destination))) mkdirSync(dirname(destination), { recursive: true });
   const stage = mkdtempSync(join(dirname(destination), '.claude-mem-files-'));
   const backup = join(stage, 'previous');
   const applied: { name: string; backedUp: boolean; installed: boolean }[] = [];

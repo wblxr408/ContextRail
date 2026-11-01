@@ -34,6 +34,12 @@ def selected(path, client, payload):
     if not matches or not matches[0].get('context_assistance'):return None,None
     binding=matches[0]
     query=QueryBinding.load(binding.get('query_binding'),binding['scope']['task'],binding['workspace'])
+    if binding.get('native_session_binding')=='current_hook' and payload.get('agent_id') in (None,payload['session_id']):
+        from dataclasses import replace
+        current=(client,payload['session_id'])
+        # The trusted native Hook supplies identity; never choose a latest log.
+        # Static historical sources remain unchanged on disk and bounded here.
+        query=replace(query,native_sessions=(current,*[p for p in query.native_sessions if p!=current][:3]))
     if (client,payload['session_id']) not in query.native_sessions:return None,None
     return binding,query
 
@@ -113,14 +119,13 @@ def _assist(path, client, payload, *, optional=False):
             # The DB claim survives a failed marker consume; it is not a delivery receipt.
             marker(binding,client,session,'take')
             from .native_clients import _task_context
-            result=_task_context(binding,payload,client,{},'provided_by_existing_native_hook_not_observed')
+            recovery={'source_event':source_event,'source_sequence':source_sequence,'base_snapshot':binding['base_snapshot'],
+                'state':'prepared','attempt':attempt,'model_consumption':'unknown'}
+            result=_task_context(binding,payload,client,{},'not_requeried_during_compaction_recovery',recovery=recovery)
             if result.get('decision')=='block':
                 code=result['reason'].split(':',1)[0].replace('ContextRail ','')
                 raise RequiredContextFailure(code,result['reason'])
             output=result['hookSpecificOutput'];context=json.loads(output['additionalContext'])
-            context['recovery']={'source_event':source_event,'source_sequence':source_sequence,'base_snapshot':binding['base_snapshot'],
-                'state':'prepared','attempt':attempt,'model_consumption':'unknown'}
-            output['additionalContext']=canonical(context)
             if len(canonical(result).encode('utf-8'))>binding['hook_bytes'] or (client=='claude' and len(output['additionalContext'].encode('utf-16-le'))//2>10000):
                 raise RequiredContextFailure('budget_exceeded','Compaction recovery envelope exceeds the native byte/inline budget.')
             with store.transaction():
@@ -162,15 +167,23 @@ def acknowledge_return(path, client, payload, result):
     """Called only after native stdout was written and flushed; not model consumption."""
     try:
         context=json.loads(result.get('hookSpecificOutput',{}).get('additionalContext','{}'))
+        if not isinstance(context,dict) or context.get('schema')!='contextrail.native-context/v1':
+            return
+        origin=context.get('origin',{})
+        if not isinstance(origin,dict) or origin.get('native_session')!=payload.get('session_id') or origin.get('client')!=client:
+            return
         receipt=context.get('recovery')
-        if not receipt:return
         binding,query=selected(path,client,payload)
         if binding is None:return
+        if context.get('task',{}).get('task_id')!=binding['scope']['task']:return
         scope=Scope(**binding['scope']);owner=Lease(**binding['owner'])
-        key=(scope.key,client,payload['session_id'],binding['base_snapshot'],receipt['source_event'])
         with Store(binding['store']) as store:
             with store.transaction():
                 store._lease(scope,owner)
+                store._event(scope,'native_context.returned',client=client,native_session=payload['session_id'],
+                    snapshot=context['task']['snapshot'],transport='stdout_flushed',model_consumption='unknown')
+                if not receipt:return
+                key=(scope.key,client,payload['session_id'],binding['base_snapshot'],receipt['source_event'])
                 changed=store.db.execute("UPDATE native_context_deliveries SET state='returned',claim_until=NULL,updated=? WHERE scope=? AND client=? AND native_session=? AND base_snapshot=? AND source_event=? AND state='prepared' AND attempt=?",(time.time(),*key,receipt['attempt'])).rowcount
                 if changed:store._event(scope,'native_compact.returned',client=client,native_session=payload['session_id'],
                     source_event=receipt['source_event'],attempt=receipt['attempt'],transport='stdout_flushed',model_consumption='unknown')

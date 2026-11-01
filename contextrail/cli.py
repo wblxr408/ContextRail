@@ -271,7 +271,9 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--home", type=Path, default=Path.home() / ".codex/services/engineering-memory")
             sub.add_argument("--input", required=True, help="Explicit user record JSON file, or - for stdin")
         elif command in ("client-apply", "client-remove"):
-            if command == "client-apply": sub.add_argument("--layout", type=Path, required=True)
+            if command == "client-apply":
+                sub.add_argument("--layout", type=Path, required=True)
+                sub.add_argument("--adopt-layout", type=Path, help="Explicit old generated layout; claim only exact matching legacy entries")
             sub.add_argument("--client", choices=("codex", "claude"), action="append")
         if command in ("search-indexed", "result-search"):
             sub.add_argument("--context-chars", type=int, default=80)
@@ -577,7 +579,7 @@ def main(argv: list[str] | None = None) -> int:
                 acknowledge_return(args.registry, args.client, payload, result)
         elif args.command == "client-apply":
             from .native_clients import apply_project_clients
-            print(canonical(apply_project_clients(args.layout, args.workspace, clients=args.client or ("codex", "claude"))))
+            print(canonical(apply_project_clients(args.layout, args.workspace, clients=args.client or ("codex", "claude"), adopt_layout=args.adopt_layout)))
         elif args.command == "client-remove":
             from .native_clients import remove_project_clients
             print(canonical(remove_project_clients(args.workspace, clients=args.client or ("codex", "claude"))))

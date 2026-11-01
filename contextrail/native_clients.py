@@ -79,10 +79,12 @@ def read_registry(path):
     _validate_memory(registry.get("memory"))
     for binding in registry["bindings"]:
         keys = {"client", "workspace", "store", "scope", "session", "base_snapshot", "owner", "enabled", "context_bytes", "hook_bytes"}
-        if (not isinstance(binding, dict) or not keys <= binding.keys() or binding.keys() - keys - {"memory", "query_binding", "context_assistance"}
+        if (not isinstance(binding, dict) or not keys <= binding.keys() or binding.keys() - keys - {"memory", "query_binding", "context_assistance", "native_session_binding"}
                 or binding["client"] not in CLIENTS or type(binding["enabled"]) is not bool):
             raise InvalidRequest("Invalid native task binding.")
         _validate_memory(binding.get("memory"))
+        if binding.get('native_session_binding','explicit') not in ('explicit','current_hook'):
+            raise InvalidRequest('Native session binding must be explicit or current_hook.')
         if type(binding.get('context_assistance',False)) is not bool:
             raise InvalidRequest('Context assistance switch must be boolean.')
         if binding.get('context_assistance') and (not isinstance(binding.get('query_binding'),str) or not Path(binding['query_binding']).is_absolute()):
@@ -180,7 +182,9 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
             if context_assistance:
                 for event in ("PostCompact", "SessionStart", "PostToolUse", "PreToolUse"):
                     # One native invocation; it dispatches the actual event from stdin.
-                    hooks["hooks"][event] = [{"hooks": [copy.deepcopy(handler)]}]
+                    event_handler = copy.deepcopy(handler)
+                    if event == 'PostCompact': event_handler.pop('additionalContextLimit',None)
+                    hooks["hooks"][event] = [{"hooks": [event_handler]}]
             (stage / hook_name).write_text(canonical(hooks), encoding="utf-8")
             profiles[client] = {"mcp_config": str(output / name), "hook_config": str(output / hook_name),
                                 "reader": reader.session, "memory_delivery": "existing_native_hook" if client in native_memory_clients else "composed_wrapper",
@@ -204,10 +208,10 @@ def toggle_client(path, client, enabled):
     return {"client": client, "enabled": enabled, "memory_hook": "unchanged"}
 
 
-def apply_project_clients(layout, workspace, *, clients=CLIENTS):
+def apply_project_clients(layout, workspace, *, clients=CLIENTS, adopt_layout=None):
     """Apply the explicitly generated owned entries as one rollback-capable set."""
     from .client_config import change_clients
-    return change_clients(workspace, clients, layout=layout)
+    return change_clients(workspace, clients, layout=layout, adopt_layout=adopt_layout)
 
 
 def remove_project_clients(workspace, *, clients=CLIENTS):
@@ -308,7 +312,7 @@ def host_hook(path, client, payload, *, native_memory=False):
     return _task_context(matches[0], payload, client, original, memory_status)
 
 
-def _task_context(binding, payload, client, original, memory_status):
+def _task_context(binding, payload, client, original, memory_status, *, recovery=None):
     cwd = Path(payload["cwd"]).resolve()
     turn = payload.get("turn_id")
     try:
@@ -318,6 +322,21 @@ def _task_context(binding, payload, client, original, memory_status):
         with Store(binding["store"]) as store:
             bridge = BridgeEvidence(store, scope, binding["session"])
             sid = bridge.refresh(binding["base_snapshot"], owner)
+            if recovery is None:
+                returned=store.db.execute("SELECT metadata FROM events WHERE scope=? AND kind='native_context.returned' AND json_extract(metadata,'$.client')=? AND json_extract(metadata,'$.native_session')=? ORDER BY sequence DESC LIMIT 1",
+                    (scope.key,client,payload['session_id'])).fetchone()
+                if returned and json.loads(returned['metadata']).get('snapshot')==sid:
+                    return original
+                delivered=store.db.execute("SELECT metadata FROM events WHERE scope=? AND kind='native_compact.returned' AND json_extract(metadata,'$.client')=? AND json_extract(metadata,'$.native_session')=? ORDER BY sequence DESC LIMIT 1",
+                    (scope.key,client,payload['session_id'])).fetchone()
+                if delivered:
+                    attempt=json.loads(delivered['metadata']).get('attempt')
+                    prepared=store.db.execute("SELECT metadata FROM events WHERE scope=? AND kind='native_compact.prepared' AND json_extract(metadata,'$.attempt')=? ORDER BY sequence DESC LIMIT 1",(scope.key,attempt)).fetchone()
+                    if prepared and json.loads(prepared['metadata']).get('snapshot')==sid:
+                        # SessionStart already returned this exact task after
+                        # compaction. Keep the original memory hook's result,
+                        # rather than appending the same task again on submit.
+                        return original
             task = bridge.packet(sid, budget=binding["context_bytes"],intent_details=False)
         specific = original.get("hookSpecificOutput", {})
         if not isinstance(specific, dict) or not isinstance(specific.get("additionalContext", ""), str):
@@ -332,6 +351,7 @@ def _task_context(binding, payload, client, original, memory_status):
                               "client": client, "native_session": payload["session_id"], "turn_id": turn,
                               "event": payload["hook_event_name"], "cwd": str(cwd)},
                    "history_control": "not_controlled", "history_replaced": False}
+        if recovery is not None: context['recovery']=recovery
         result = copy.deepcopy(original)
         inline_characters = 10000 if client == "claude" else None
         def render(length):
@@ -349,13 +369,22 @@ def _task_context(binding, payload, client, original, memory_status):
             # above this native limit. Count UTF-16 units, including emoji pairs.
             chars = len(result["hookSpecificOutput"]["additionalContext"].encode("utf-16-le")) // 2
             return size <= binding["hook_bytes"] and (inline_characters is None or chars <= inline_characters)
-        if not fits(0) and task.get('resume_intent',{}).get('status')=='anchored':
+        if not fits(0):
             # The full required intent remains in START/evidence. Avoid repeating
             # its source inventory in the transport envelope, then let the
             # original compiler omit optional pages within native limits.
             def compact(value):
-                intent=value['resume_intent']
-                value['resume_intent']={key:intent[key] for key in ('status','effective_request','next_action','coverage','ref')}
+                intent=value.get('resume_intent',{})
+                if intent.get('status')=='anchored':
+                    value['resume_intent']={key:intent[key] for key in ('status','effective_request','next_action','coverage','ref')}
+                # Compiler already enforced exact source/currentness. The native
+                # inline transport keeps every selected body and exact Ref;
+                # repetitive per-row display metadata stays in context.packet.
+                for key in ('stable_evidence','evidence'):
+                    value['context'][key]=[{k:v for k,v in row.items() if k in {'ref','text','required','trust'}}
+                        for row in value['context'].get(key,[])]
+                value['transport_view']={'omitted':'per_evidence_display_metadata_only','full_packet':{
+                    'tool':'context.packet','arguments':{'snapshot':sid,'budget':binding['context_bytes']}}}
                 return value
             context['task']=compact(task)
             task_budget=binding['context_bytes']

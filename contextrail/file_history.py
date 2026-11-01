@@ -4,6 +4,7 @@ from dataclasses import asdict
 import json
 import importlib.util
 import os
+import re
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -168,8 +169,45 @@ def history_neighborhood(tools,ref,*,budget=8192,limit=10):
     except (OSError,ValueError,sqlite3.Error):raise InvalidRequest('The exact history neighborhood is unavailable; no newer source was substituted.') from None
 
 
+def _code_mode_command(value):
+    """Read a literal exec_command call in the observed native wrapper; no eval."""
+    if not isinstance(value,str) or len(value)>16384:return None
+    match=re.fullmatch(r'\s*text\(\s*await\s+tools\.exec_command\(\s*(\{.*\})\s*\)\s*\)\s*;?\s*',value,re.S)
+    if not match:
+        match=re.fullmatch(r'\s*await\s+tools\.exec_command\(\s*(\{.*\})\s*\)\s*;?\s*',value,re.S)
+    if not match:return None
+    text=match[1];i=1;fields={};decoder=json.JSONDecoder()
+    def whitespace(index):
+        while index<len(text) and text[index].isspace():index+=1
+        return index
+    try:
+        while True:
+            i=whitespace(i)
+            if text[i]=='}':
+                if text[i+1:].strip():return None
+                command=fields.get('cmd',fields.get('command'))
+                return command if isinstance(command,str) else None
+            if text[i]=='"':key,i=decoder.raw_decode(text,i)
+            else:
+                keymatch=re.match(r'[A-Za-z_$][A-Za-z0-9_$]*',text[i:])
+                if not keymatch:return None
+                key=keymatch[0];i+=len(key)
+            if not isinstance(key,str) or key in fields:return None
+            i=whitespace(i)
+            if text[i]!=':':return None
+            i=whitespace(i+1);fields[key],i=decoder.raw_decode(text,i)
+            i=whitespace(i)
+            if text[i]==',':i+=1
+            elif text[i]!='}':return None
+    except (ValueError,IndexError,RecursionError):return None
+
+
 def literal_paths(payload):
     tool=payload.get('tool_name','');args=payload.get('tool_input',{})
+    if tool in {'exec','functions.exec'}:
+        command=_code_mode_command(args.get('input',args.get('code')) if isinstance(args,dict) else args)
+        if command is None:return []
+        tool='exec_command';args={'cmd':command}
     if not isinstance(args,dict):return []
     if tool in {'Read','Edit','Write','MultiEdit','read_file','view_file'}:
         value=args.get('file_path',args.get('path'))
@@ -194,7 +232,11 @@ def hook_file_history(binding,query,client,payload):
     try:
         path,_=resolved(query,paths[0],payload['cwd'])
         with Store(binding['store']) as store:
-            tools=ContextTools(store,scope,binding['session'],query_binding=query)
+            from dataclasses import replace
+            # Automatic reminders must not grow from the reads they just caused.
+            # Explicit MCP history retains the current session when host-bound.
+            historical=replace(query,native_sessions=tuple(p for p in query.native_sessions if p!=(client,payload['session_id']))) if binding.get('native_session_binding')=='current_hook' else query
+            tools=ContextTools(store,scope,binding['session'],query_binding=historical)
             history=file_history(tools,str(path),budget=min(8192,binding['hook_bytes']-512),limit=15)
             if not history['entries']:
                 return {'systemMessage':'ContextRail file history '+('source unavailable; ordinary read can continue.' if history['source_errors'] else 'has no observed matching sources.')}

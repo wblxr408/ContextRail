@@ -1,5 +1,13 @@
 # Design
 
+## 现有客户端启用增量
+
+用户追加授权本机启用。旧生成布局是显式迁移凭据，只有当前值与其中服务器/Hook 精确一致才接管；缺少或人工改变的旧项报冲突，整批预规划后仍复用 replaceOwnedFiles。迁移不碰全局 Hook、模型、凭据或原生信任库。v1 稳定路径保持，备份覆盖项目配置及受管回执。
+
+当前原生主会话来源可在选定任务 registry 显式启用 current_hook 绑定模式：从可信 Hook payload 获取精确 client/session，临时加入有界查询绑定，不写白名单、不猜测最新日志。子会话、工作区不匹配、禁用绑定不会获得该能力。默认仍是原静态白名单。
+
+启用验收只运行本次迁移/新会话目标的最小行为 TDD 与用户要求的真实双端流程。原生会话使用既有模型/账号和正常权限；保留 stdout_flushed 与模型实际观察的区别。
+
 ## Context
 
 详细来源与已有能力去重见 ../../../docs/claude-mem-self-use-todo.md。上游固定 b80b29bc49d08a71312f44b8feacb2e7585edff4，已有 63 份研究切片。原 M/main、Bridge 要求与 Rail task/version 已有实现；E04/E07 继续 causal-recovery-history。
