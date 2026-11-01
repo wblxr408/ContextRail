@@ -6,6 +6,8 @@
 
 ## What Changes
 
+- 用户现已明确要求接入界面：启用 CM08/CM11/CM21，直接复用固定上游的 My Work、Viewer、会话详情、连接/映射组件及样式；提供本地任务、原 main 记忆、故障、文件、产物和设置入口。
+
 - 用户追加要求实测本机内存并在有压力时优化：减少无恢复状态和非文件操作的临时 Node 调用，保留原服务、上游恢复主体与真实文件处理。
 
 - 用户追加现有 Codex/Claude 启用：迁移已有 v1 生成接线，保留全局 Hook 与单一记忆服务，完成原生实际生效验证和去重。受管接管必须显式提供旧布局作为证据。
@@ -15,14 +17,14 @@
 - 保留原 24 个 CM 编号，P0 8、P1 6、P2 9、按需 1；旧 72 项只关联增量，不重做已有功能。E04/E07 继续原进行中 change。
 - 复用规则改为原模块/源码切片直接使用 → 本项目接口适配 → 最小补丁 → 有具体理由才移植。允许所选模块保留 TypeScript/JavaScript，不预设全转 Python。
 - 交付物列表、来源和可打开链接先用现有入口交付，不依赖完整 My Work、人工查看页或页面连接模块。
-- 完整 My Work/设置编辑页、更多客户端、分组与其他扩展后置；需要时优先保留上游页面/adapter，再让本项目匹配其接口。
+- 当前已按用户追加请求启用本地 My Work/项目接线设置/记忆与来源详情；更多客户端、分组与其他扩展继续按需，优先保留上游页面/adapter。
 
 ## Capabilities
 
 ### New Capabilities
 
 - native-context-assistance：首批覆盖支持事件下的精确补注入、文件相关历史与无模型记录；本批聚焦 Codex/Claude。
-- personal-work-view：首批交付无完整页面依赖的产物导航；完整任务界面、人工查看和页面状态仅后续显式启用时适用。
+- personal-work-view：首批交付无完整页面依赖的产物导航；本次显式启用后交付完整本地任务页面、人工查看和页面状态。
 - local-client-maintenance：首批解释现有故障和配置来源、可靠更新/撤销受管接线；完整数据备份恢复扩展按实际缺口处理。
 
 ### Modified Capabilities
@@ -31,4 +33,4 @@
 
 ## Impact
 
-规划源位于 D:/ContextRail；本阶段在隔离任务分支实现 native_clients/local_status/原 M 接口，固定 TS 切片位于 contextrail/_vendor/claude_mem。原 main、Bridge 要求和 R task/version 权威保留，可以调整本项目接口以承接上游代码。本阶段选择按需 Node 22.6+ 原生类型擦除，无 npm/Bun 构建或安装，不新增默认采集器或云服务，也不进入更多客户端建设。
+规划源位于 D:/ContextRail；本阶段在隔离任务分支实现 native_clients/local_status/原 M 接口，固定 TS 切片位于 contextrail/_vendor/claude_mem。原 main、Bridge 要求和 R task/version 权威保留，可以调整本项目接口以承接上游代码。首批选择按需 Node 22.6+ 原生类型擦除；本次 UI 使用独立 npm 锁与生产构建，运行时只需静态资源及按需 Python 宿主，不新增默认采集器或云服务，也不进入更多客户端建设。

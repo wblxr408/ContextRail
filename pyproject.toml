@@ -24,7 +24,7 @@ contextrail-eval = "contextrail.evaluation.__main__:main"
 include = ["contextrail*"]
 
 [tool.setuptools.package-data]
-"contextrail" = ["*.ps1"]
+"contextrail" = ["*.ps1", "ui_static/*", "ui_static/work-view/*", "ui_static/work-view/assets/*"]
 "contextrail._vendor" = ["*_LICENSE.txt"]
 "contextrail._vendor.claude_mem" = ["*.ts", "*.mjs", "*.json", "LICENSE", "NOTICE"]
 

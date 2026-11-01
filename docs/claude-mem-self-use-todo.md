@@ -8,6 +8,10 @@
 
 用户本轮原话：“按我的使用习惯重新调整TODO，优先稳定性、故障解释、压缩后补注入、文件相关历史和交付物入口，完整界面和更多客户端放后面，尽量直接复用claude-mem现成代码。”
 
+## 本次追加：本地界面已启用
+
+用户在 A–D、双端接线与内存优化后明确说“现在接入”。CM08/CM11/CM21 的本地范围已交付：固定上游 My Work、Viewer/SessionDetailPage、确切版本人工已查看及来源/传输状态；项目接线设置只复用原 registry 开关。入口、代码归属、资源与验证见 [界面指南](../CLAUDE_MEM_UI.md) 和现有 change 的 ui-verification.md。下面的 P2 顺序保留原计划依据；更多客户端和其他后置能力仍按需，不据此改成全部已完成。
+
 ## 研究依据与边界
 
 上游为 [thedotmack/claude-mem](https://github.com/thedotmack/claude-mem)，固定 [commit b80b29bc49d08a71312f44b8feacb2e7585edff4](https://github.com/thedotmack/claude-mem/commit/b80b29bc49d08a71312f44b8feacb2e7585edff4)，提交时间 2026-11-01T05:21:15Z，package.json 版本 15.8.0。已定向取得 63 份源码/许可文件作为研究副本，没有运行它的安装器、脚本、模型、服务或测试。源码目录是按关注机制选择的切片，不是整个仓库审计。

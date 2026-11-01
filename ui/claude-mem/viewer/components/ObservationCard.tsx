@@ -1,0 +1,162 @@
+import React, { useState } from 'react';
+import { Observation } from '../types';
+import { formatDate } from '../utils/formatters';
+import { DeleteButton } from './DeleteButton';
+import { ObservationMediaSection } from './ObservationMedia';
+import type { DeletableItemType } from '../utils/feed-deletion';
+import { parseStoredStringList } from '../utils/stored-string-list';
+
+interface ObservationCardProps {
+  observation: Observation;
+  onDeleted: (itemType: DeletableItemType, id: number) => void;
+}
+
+function stripProjectRoot(filePath: string): string {
+  const markers = ['/Scripts/', '/src/', '/plugin/', '/docs/'];
+
+  for (const marker of markers) {
+    const index = filePath.indexOf(marker);
+    if (index !== -1) {
+      return filePath.substring(index + 1);
+    }
+  }
+
+  const projectIndex = filePath.indexOf('claude-mem/');
+  if (projectIndex !== -1) {
+    return filePath.substring(projectIndex + 'claude-mem/'.length);
+  }
+
+  const parts = filePath.split('/');
+  return parts.length > 3 ? parts.slice(-3).join('/') : filePath;
+}
+
+export function ObservationCard({ observation, onDeleted }: ObservationCardProps) {
+  const [showFacts, setShowFacts] = useState(false);
+  const [showNarrative, setShowNarrative] = useState(false);
+  const date = formatDate(observation.created_at_epoch);
+
+  const facts = parseStoredStringList(observation.facts);
+  const concepts = parseStoredStringList(observation.concepts);
+  const filesRead = parseStoredStringList(observation.files_read).map(stripProjectRoot);
+  const filesModified = parseStoredStringList(observation.files_modified).map(stripProjectRoot);
+
+  const hasFactsContent = facts.length > 0 || concepts.length > 0 || filesRead.length > 0 || filesModified.length > 0;
+
+  return (
+    <div className="card">
+      {/* Header with toggle buttons in top right */}
+      <div className="card-header">
+        <div className="card-header-left">
+          <span className={`card-type type-${observation.type}`}>
+            {observation.type}
+          </span>
+          <span className={`card-source source-${observation.platform_source || 'claude'}`}>
+            {observation.platform_source || 'claude'}
+          </span>
+          <span className="card-project">{observation.project}</span>
+          {observation.merged_into_project && (
+            <span className="card-merged-badge" title={`Merged into ${observation.merged_into_project}`}>
+              merged → {observation.merged_into_project}
+            </span>
+          )}
+        </div>
+        <div className="view-mode-toggles">
+          {hasFactsContent && (
+            <button
+              className={`view-mode-toggle ${showFacts ? 'active' : ''}`}
+              aria-pressed={showFacts}
+              onClick={() => {
+                setShowFacts(!showFacts);
+                if (!showFacts) setShowNarrative(false); 
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 11 12 14 22 4"></polyline>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+              </svg>
+              <span>facts</span>
+            </button>
+          )}
+          {observation.narrative && (
+            <button
+              className={`view-mode-toggle ${showNarrative ? 'active' : ''}`}
+              aria-pressed={showNarrative}
+              onClick={() => {
+                setShowNarrative(!showNarrative);
+                if (!showNarrative) setShowFacts(false); 
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+              </svg>
+              <span>narrative</span>
+            </button>
+          )}
+          {observation.platform_source === 'basic-memory' && <a className="view-mode-toggle" href={'/api/rail/note?id=' + observation.id} target="_blank" rel="noreferrer">打开原文</a>}
+          <DeleteButton itemType="observation" id={observation.id} onDeleted={onDeleted} />
+        </div>
+      </div>
+
+      {/* Title */}
+      <h3 className="card-title">{observation.title || 'Untitled'}</h3>
+
+      {/* Content based on toggle state */}
+      <div className="view-mode-content">
+        {!showFacts && !showNarrative && observation.subtitle && (
+          <div className="card-subtitle">{observation.subtitle}</div>
+        )}
+        {showFacts && facts.length > 0 && (
+          <ul className="facts-list">
+            {facts.map((fact: string, i: number) => (
+              <li key={i}>{fact}</li>
+            ))}
+          </ul>
+        )}
+        {showNarrative && observation.narrative && (
+          <div className="narrative">
+            {observation.narrative}
+          </div>
+        )}
+      </div>
+
+      {/* Attached images: only rows with validated media refs render this */}
+      {observation.media && observation.media.attachments.length > 0 && (
+        <ObservationMediaSection observationId={observation.id} media={observation.media} />
+      )}
+
+      {/* Metadata footer - id, date, and conditionally concepts/files when facts toggle is on */}
+      <div className="card-meta">
+        <span className="meta-date">#{observation.id} • {date}</span>
+        {showFacts && (concepts.length > 0 || filesRead.length > 0 || filesModified.length > 0) && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+            {concepts.map((concept: string, i: number) => (
+              <span key={i} style={{
+                padding: '2px 8px',
+                background: 'var(--color-type-badge-bg)',
+                color: 'var(--color-type-badge-text)',
+                borderRadius: '3px',
+                fontWeight: '500',
+                fontSize: '10px'
+              }}>
+                {concept}
+              </span>
+            ))}
+            {filesRead.length > 0 && (
+              <span className="meta-files">
+                <span className="file-label">read:</span> {filesRead.join(', ')}
+              </span>
+            )}
+            {filesModified.length > 0 && (
+              <span className="meta-files">
+                <span className="file-label">modified:</span> {filesModified.join(', ')}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
