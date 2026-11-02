@@ -11,7 +11,7 @@ interface HeaderProps {
 export function Header({ projects, currentFilter, onFilterChange, themePreference, onThemeChange, onContextPreviewToggle }: HeaderProps) {
   return createPortal(
     <div slot="tools" className="rail-shell-tools">
-      <label>来源 <select aria-label="筛选记忆来源" value={currentFilter} onChange={event => onFilterChange(event.target.value)}><option value="">全部来源</option>{projects.map(project => <option key={project} value={project}>{project}</option>)}</select></label>
+      <label>范围 <select aria-label="筛选记忆来源" value={currentFilter} onChange={event => onFilterChange(event.target.value)}><option value="">全部来源</option>{projects.map(project => <option key={project} value={project}>{project}</option>)}</select></label>
       <button className="local-work-link" onClick={onContextPreviewToggle}>接线设置</button>
       <ThemeToggle preference={themePreference} onThemeChange={onThemeChange} />
     </div>, document.querySelector('context-rail-shell')!);

@@ -16,14 +16,15 @@ function usePaginationFor<TItem extends DataItem>(
   endpoint: string,
   dataType: DataType,
   currentFilter: string,
-  currentSession: SessionRef | null
+  currentSession: SessionRef | null,
+  currentPlatform: string
 ) {
   const [state, setState] = useState<PaginationState>({
     isLoading: false,
     hasMore: true
   });
 
-  const selectionKey = `${currentFilter}|${currentSession ? sessionKey(currentSession) : ''}`;
+  const selectionKey = `${currentPlatform}|${currentFilter}|${currentSession ? sessionKey(currentSession) : ''}`;
   const offsetRef = useRef(0);
   const selectionRef = useRef({ key: selectionKey, version: 0 });
   // Concurrent renders may be abandoned. Derive their prospective visit
@@ -64,6 +65,7 @@ function usePaginationFor<TItem extends DataItem>(
     if (currentFilter) {
       params.append('project', currentFilter);
     }
+    if (currentPlatform && !currentSession) params.append('platformSource', currentPlatform);
     if (currentSession) {
       // Both halves of the session identity: the same content session id can
       // exist under two platforms.
@@ -127,10 +129,10 @@ function usePaginationFor<TItem extends DataItem>(
   };
 }
 
-export function usePagination(currentFilter: string, currentSession: SessionRef | null = null) {
-  const observations = usePaginationFor<Observation>(API_ENDPOINTS.OBSERVATIONS, 'observations', currentFilter, currentSession);
-  const summaries = usePaginationFor<Summary>(API_ENDPOINTS.SUMMARIES, 'summaries', currentFilter, currentSession);
-  const prompts = usePaginationFor<UserPrompt>(API_ENDPOINTS.PROMPTS, 'prompts', currentFilter, currentSession);
+export function usePagination(currentFilter: string, currentSession: SessionRef | null = null, currentPlatform = '') {
+  const observations = usePaginationFor<Observation>(API_ENDPOINTS.OBSERVATIONS, 'observations', currentFilter, currentSession, currentPlatform);
+  const summaries = usePaginationFor<Summary>(API_ENDPOINTS.SUMMARIES, 'summaries', currentFilter, currentSession, currentPlatform);
+  const prompts = usePaginationFor<UserPrompt>(API_ENDPOINTS.PROMPTS, 'prompts', currentFilter, currentSession, currentPlatform);
 
   return {
     observations,

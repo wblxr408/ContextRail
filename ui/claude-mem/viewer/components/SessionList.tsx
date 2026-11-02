@@ -7,6 +7,7 @@ import { UI } from '../constants/ui';
 interface SessionListProps {
   header: React.ReactNode;
   sessions: SessionCatalogEntry[];
+  manualLoadMore?: boolean;
   isLoading: boolean;
   hasMore: boolean;
   loadError: string | null;
@@ -16,7 +17,7 @@ interface SessionListProps {
   onLoadMore: () => void;
 }
 
-export function SessionList({ header, sessions, isLoading, hasMore, loadError, onOpen, onDelete, onLoadMore }: SessionListProps) {
+export function SessionList({ header, sessions, isLoading, hasMore, loadError, onOpen, onDelete, onLoadMore, manualLoadMore = false }: SessionListProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const onLoadMoreRef = useRef(onLoadMore);
 
@@ -38,7 +39,7 @@ export function SessionList({ header, sessions, isLoading, hasMore, loadError, o
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [hasMore, isLoading, loadError]);
+  }, [hasMore, isLoading, loadError, manualLoadMore]);
 
   return (
     <main className="session-list" aria-label="Saved sessions">
@@ -69,8 +70,8 @@ export function SessionList({ header, sessions, isLoading, hasMore, loadError, o
         {isLoading && sessions.length > 0 && (
           <div className="session-list-empty">Loading older sessions…</div>
         )}
-        {hasMore && !isLoading && !loadError && sessions.length > 0 && (
-          <div ref={loadMoreRef} style={{ height: '20px', margin: '10px 0' }} />
+        {hasMore && !isLoading && !loadError && (sessions.length > 0 || manualLoadMore) && (
+          manualLoadMore ? <button className="rail-filter-more" onClick={onLoadMore}>继续载入以扩大筛选范围</button> : <div ref={loadMoreRef} style={{ height: '20px', margin: '10px 0' }} />
         )}
       </div>
     </main>

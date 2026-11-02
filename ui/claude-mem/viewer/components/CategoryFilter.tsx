@@ -8,6 +8,7 @@ interface CategoryFilterProps {
   filteredCount: number;
   totalCount: number;
   totalIsPartial: boolean;
+  labels?: Record<string, string>;
 }
 
 export function CategoryFilter({
@@ -17,6 +18,7 @@ export function CategoryFilter({
   filteredCount,
   totalCount,
   totalIsPartial,
+  labels,
 }: CategoryFilterProps) {
   const presentCategories = CATEGORY_ORDER.filter(category => (categoryCounts[category] ?? 0) > 0);
 
@@ -32,10 +34,10 @@ export function CategoryFilter({
             key={category}
             className={`console-filter-chip ${activeCategories.has(category) ? 'active' : ''}`}
             onClick={() => onToggle(category)}
-            title={`Filter to ${labelForCategory(category)}`}
+            title={`Filter to ${labels?.[category] ?? labelForCategory(category)}`}
             aria-pressed={activeCategories.has(category)}
           >
-            {labelForCategory(category)} ({categoryCounts[category]})
+            {labels?.[category] ?? labelForCategory(category)} ({categoryCounts[category]})
           </button>
         ))}
       </div>

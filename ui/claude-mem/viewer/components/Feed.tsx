@@ -10,6 +10,7 @@ import { UI } from '../constants/ui';
 interface FeedProps {
   /** Newest first; build with buildFeedItems. */
   items: FeedItem[];
+  manualLoadMore?: boolean;
   /** Rendered at the top of the scrolling column (view tabs, session header). */
   header?: React.ReactNode;
   onLoadMore: () => void;
@@ -19,7 +20,7 @@ interface FeedProps {
   loadError?: string | null;
 }
 
-export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore, loadError }: FeedProps) {
+export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore, loadError, manualLoadMore = false }: FeedProps) {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const onLoadMoreRef = useRef(onLoadMore);
@@ -54,7 +55,7 @@ export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore,
       }
       observer.disconnect();
     };
-  }, [hasMore, isLoading, loadError]);
+  }, [hasMore, isLoading, loadError, manualLoadMore]);
 
   return (
     <main className="feed" ref={feedRef} aria-label="Memory timeline">
@@ -76,7 +77,7 @@ export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore,
         {items.length === 0 && !isLoading && !loadError && (
           <div className="memory-empty-state">
             <h3>No memories to show</h3>
-            <p>Memories appear here as you work. If a filter is selected, try another project or category.</p>
+            <p>{manualLoadMore ? '当前已载入内容没有匹配项。可清除筛选，或在下方继续载入。' : 'Memories appear here as you work. If a filter is selected, try another project or category.'}</p>
           </div>
         )}
         {isLoading && (
@@ -92,7 +93,7 @@ export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore,
           </div>
         )}
         {hasMore && !isLoading && !loadError && (
-          <div ref={loadMoreRef} style={{ height: '20px', margin: '10px 0' }} />
+          manualLoadMore ? <button className="rail-filter-more" onClick={onLoadMore}>继续载入以扩大筛选范围</button> : <div ref={loadMoreRef} style={{ height: '20px', margin: '10px 0' }} />
         )}
         {!hasMore && items.length > 0 && (
           <div style={{ textAlign: 'center', padding: '20px', color: 'var(--color-text-muted)', fontSize: '14px' }}>

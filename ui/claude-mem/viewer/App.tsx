@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import React, { useState, useDeferredValue, useEffect, useCallback, useMemo, useRef, useLayoutEffect } from 'react';
+import { QuickFilters } from './components/QuickFilters';
+import { EMPTY_MEMORY_FILTERS, filterMemories, filterSessions, type MemoryFilters } from './utils/quick-filter';
+import { countByCategory } from './utils/category';
 import { Header } from './components/Header';
 import { Feed } from './components/Feed';
 import { ViewTabs, type ViewTab } from './components/ViewTabs';
@@ -35,16 +38,17 @@ import {
 interface FeedScope {
   project: string;
   session: SessionRef | null;
+  platform: string;
 }
 
 function feedScopeKey(scope: FeedScope): string {
-  return `${scope.project}|${scope.session ? sessionKey(scope.session) : ''}`;
+  return `${scope.platform}|${scope.project}|${scope.session ? sessionKey(scope.session) : ''}`;
 }
 
-function scopeForRoute(route: ViewRoute, project: string): FeedScope | null {
+function scopeForRoute(route: ViewRoute, project: string, platform: string): FeedScope | null {
   if (route.view === 'sessions') return null;
-  if (route.view === 'session') return { project: '', session: route.session };
-  return { project, session: null };
+  if (route.view === 'session') return { project: '', session: route.session, platform: '' };
+  return { project, session: null, platform };
 }
 
 function navigate(hash: string): void {
@@ -53,6 +57,8 @@ function navigate(hash: string): void {
 
 export function App() {
   const [currentFilter, setCurrentFilter] = useState('');
+  const [quickFilters, setQuickFilters] = useState<MemoryFilters>(EMPTY_MEMORY_FILTERS);
+  const deferredQuery = useDeferredValue(quickFilters.query);
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const [logsModalOpen, setLogsModalOpen] = useState(false);
   const [welcomeDismissed, setWelcomeDismissed] = useState<boolean>(getStoredWelcomeDismissed);
@@ -69,7 +75,7 @@ export function App() {
   // The Sessions list keeps the last timeline/session scope, so switching back
   // does not reload pages that are still correct.
   const [feedScope, setFeedScope] = useState<FeedScope>(
-    () => scopeForRoute(route, currentFilter) ?? { project: currentFilter, session: null }
+    () => scopeForRoute(route, currentFilter, quickFilters.source) ?? { project: currentFilter, session: null, platform: quickFilters.source }
   );
   const scopeKey = feedScopeKey(feedScope);
   const activeFeedScopeRef = useRef({ key: scopeKey, version: 0 });
@@ -94,7 +100,7 @@ export function App() {
     isLoaded: settingsLoaded, loadError: settingsLoadError, reload: reloadSettings,
   } = useSettings();
   const { preference, setThemePreference } = useTheme();
-  const pagination = usePagination(feedScope.project, feedScope.session);
+  const pagination = usePagination(feedScope.project, feedScope.session, feedScope.platform);
 
   useEffect(() => {
     const onHashChange = () => setRoute(parseViewRoute(window.location.hash));
@@ -103,9 +109,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const next = scopeForRoute(route, currentFilter);
+    const next = scopeForRoute(route, currentFilter, quickFilters.source);
     if (next) setFeedScope(prev => (feedScopeKey(prev) === feedScopeKey(next) ? prev : next));
-  }, [route, currentFilter]);
+  }, [route, currentFilter, quickFilters.source]);
 
   const refreshCatalog = catalog.refresh;
   useEffect(() => {
@@ -113,6 +119,7 @@ export function App() {
   }, [route.view, currentFilter, refreshCatalog]);
 
   const matchesScope = useCallback((item: SessionScopedRow & { project: string; merged_into_project?: string | null }) => {
+    if (feedScope.platform && item.platform_source !== feedScope.platform) return false;
     if (feedScope.session) return sameSession(sessionRefOf(item), feedScope.session);
     return !feedScope.project || rowInProject(item, feedScope.project);
   }, [feedScope]);
@@ -146,11 +153,20 @@ export function App() {
     [allObservations, allSummaries, allPrompts]
   );
 
-  const visibleSessions = useMemo(() => {
-    return catalog.sessions
-      .filter(session => !currentFilter || session.project === currentFilter)
-      .sort((a, b) => b.started_at_epoch - a.started_at_epoch);
-  }, [catalog.sessions, currentFilter]);
+  const filteredFeedItems = useMemo(
+    () => filterMemories(feedItems, { ...quickFilters, query: deferredQuery }, Date.now()),
+    [feedItems, quickFilters, deferredQuery]
+  );
+  const loadedSessions = useMemo(() => catalog.sessions.filter(session => !currentFilter || session.project === currentFilter), [catalog.sessions, currentFilter]);
+  const visibleSessions = useMemo(() => filterSessions(loadedSessions, { ...quickFilters, query: deferredQuery }, Date.now())
+    .sort((a, b) => b.started_at_epoch - a.started_at_epoch), [loadedSessions, quickFilters, deferredQuery]);
+  const hasQuickFilters = !!(quickFilters.query.trim() || quickFilters.source || quickFilters.days || quickFilters.categories.length);
+  const categoryCounts = useMemo(() => countByCategory(feedItems), [feedItems]);
+  const changeQuickFilters = (next: MemoryFilters) => {
+    if (next.source !== quickFilters.source) setCurrentFilter('');
+    setQuickFilters(next);
+  };
+  const clearQuickFilters = () => { setQuickFilters(EMPTY_MEMORY_FILTERS); setCurrentFilter(''); };
 
   const toggleContextPreview = useCallback(() => {
     setContextPreviewOpen(prev => !prev);
@@ -311,6 +327,12 @@ export function App() {
           onSelect={tab => navigate(tab === 'sessions' ? sessionsHash() : '')}
         />
       </div>
+      {route.view !== 'session' && <QuickFilters value={quickFilters} onChange={changeQuickFilters}
+        onClear={clearQuickFilters} counts={categoryCounts}
+        matched={route.view === 'sessions' ? visibleSessions.length : filteredFeedItems.length}
+        loaded={route.view === 'sessions' ? loadedSessions.length : feedItems.length}
+        hasMore={route.view === 'sessions' ? catalog.hasMore : hasMore}
+        sessions={route.view === 'sessions'} />}
     </>
   );
 
@@ -320,6 +342,7 @@ export function App() {
       <SessionList
         header={tabs}
         sessions={visibleSessions}
+        manualLoadMore={hasQuickFilters}
         isLoading={catalog.isLoading}
         hasMore={catalog.hasMore}
         loadError={catalog.loadError}
@@ -348,7 +371,8 @@ export function App() {
     content = (
       <Feed
         header={tabs}
-        items={feedItems}
+        items={filteredFeedItems}
+        manualLoadMore={hasQuickFilters}
         onLoadMore={handleLoadMore}
         onDeleted={removeDeletedItem}
         isLoading={isLoading}

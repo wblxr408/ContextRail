@@ -75,3 +75,12 @@ OpenSpec5.4仍仅余Codex真实compact模型服务拒绝（model_not_found）；
 档案1280px为三列390px，1024px为双列466px，390px为单列352px；390px的页面client/scrollWidth均为390px。卡片来源与工具拆成两行，避免多栏挤压导致英文标签逐字折行。档案实际滚动720px后共用页头仍top=0。viewport已恢复默认。截图：当前聊天outputs/context-rail-one-screen.jpg与context-rail-memory-columns.jpg。
 
 My Work TypeScript/Vite、Viewer TypeScript/esbuild与OpenSpec strict验证通过。共用页头移除旧Navbar后，构建报告未使用的旧页头类型/标题变量，已删除这些旧呈现变量后重建通过。没有执行旧业务回归、启动/健康/导入探针或样式字符串断言。实际部署为Windows本机既有服务的静态资产热读取，没有重启原Hook或记忆服务。任务5.4既有远端compact限制保持原记录。
+## 记忆档案快速筛选（用户追加）
+
+任务7.9新增固定筛选条：关键词、Basic Memory/Codex/Claude来源、24小时/7天/30天、既有分类、一键清除、匹配/载入数。沿用CategoryFilter/categoryOf与原平台参数，不新增索引或模型。上方原下拉框标为“范围”，和快捷来源区分。搜索命中已载入标题、摘要/正文预览、事实和文件路径；多词AND，分类组OR，其余AND，Unicode/大小写/斜杠规范化。会话页筛选标题/ID/项目，原会话详情分类保留。
+
+仅为本次新增组合筛选写6个行为契约：来源/时间/类别/多词交集、原路径与正文命中、清空与无匹配、时间边界与未知时间、分类OR及会话筛选。中性初始实现实测6项断言失败；实现后同6项通过。没有启动旧回归套件或镜像实现/存在/导入/健康探针。Viewer类型与esbuild构建、OpenSpec strict均通过。
+
+真实浏览器：输入“繁忙”从50条收窄为2条（包含正文命中）；切Codex返回48条且来源均为Codex；Basic Memory无匹配时仍提供继续载入，点击一次载入范围由50增为100；清除恢复全部来源与空查询，斜杠键聚焦搜索，Esc清关键词。会话标题/项目“ContextRail”筛到3/4会话。Basic Memory+最近7天+分类+关键词组合也生效。尚有未加载记录时，筛选启用会把原自动sentinel改成手动继续载入，避免空结果连续拉取全文；页面明确说明范围，未声称全库全文检索或无匹配即全库不存在。
+
+390px页面clientWidth/scrollWidth均为390，来源按钮与时间控件可见，viewport已恢复默认。滚动检查暴露上游flex内容容器高度被限制，导致sticky越过父容器后失效；调整内容容器自然高度后筛选条保持在共用页头下方。主导航与原数据服务均沿用已有入口。本轮在Windows本机完成并同步静态资产，未变更主机其他未提交后端文件。
