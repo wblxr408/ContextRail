@@ -61,6 +61,7 @@ export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore,
       <ScrollToTop targetRef={feedRef} />
       <div className="feed-content">
         {header}
+        <div className="rail-memory-grid">
         {items.map(item => {
           const key = `${item.itemType}-${item.id}`;
           if (item.itemType === 'observation') {
@@ -71,6 +72,7 @@ export function Feed({ items, header, onLoadMore, onDeleted, isLoading, hasMore,
             return <PromptCard key={key} prompt={item} />;
           }
         })}
+        </div>
         {items.length === 0 && !isLoading && !loadError && (
           <div className="memory-empty-state">
             <h3>No memories to show</h3>

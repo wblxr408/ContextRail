@@ -154,3 +154,9 @@ work-product.mjs 整个原模块保持不改，实际消费 productsFromFields/s
 真实新交付物 stdio 调用发现本机共享 Python 的 SDK 2 不再提供 Server.list_tools 装饰器，旧挂载在处理业务前退出。比较局部隔离强制 1.x 与薄兼容：前者令已有客户端路径失效并引入额外运行环境；后者仅在注册/字段命名边界分支，原读取/参数验证/计量共用，因此选择后者。MCP optional 范围为 >=1.28,<3，未更改全局依赖。功能、部署兼容、维护和可靠性是决定维度；速度/内存/费用未做基准，生态/安全没有新增第三方服务器或权限，语言/库退出策略保留原官方 SDK。
 
 SDK 2 采用官方 on_list_tools/on_call_tool、snake_case types 和 ctx.request_id；1.x 保留原方法。当前 SDK 2 与隔离 SDK 1.30 均用真实工具发现、列表、精确详情和拒绝 scope override 验证；没有以握手/启动替代业务。依据 [官方 migration](https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/docs/migration.md)。
+
+## D13 共用页头与视口布局
+
+用户反馈三页导航跳动、工作台整页溢出、档案单列。三入口统一消费静态 rail-shell.js 的同一个 Web Component 页头；布局与文字一致，active 只选择页签，页面已有主题/来源控件经 slot 保留。固定顶栏预留统一高度，页内数据与加载方式沿用原入口，不引入前端框架或后台进程。
+
+桌面宽度超过1050px且高度至少680px时，工作台使用视口剩余空间的三列两行，面板内部允许长列表/详情滚动，页尾与六面板同屏；较小窗口正常文档滚动，避免强行裁切内容。档案保留原Feed和SessionList的分页 sentinel，卡片另包为独立网格，标题、错误、加载状态不混进卡片列：1200px起三列、761–1199px双列、更窄单列。保留时间顺序的逐行阅读与键盘顺序，不用会改变阅读顺序的瀑布流。

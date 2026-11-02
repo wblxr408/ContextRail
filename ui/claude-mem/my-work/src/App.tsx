@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { MotionConfig } from 'motion/react'
 import { InboxIcon, ListChecksIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -8,10 +9,8 @@ import { Switch } from '@/components/ui/switch'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ActivePill, DeviceFreshness, LiveIndicator } from '@/components/bits'
-import { Navbar, NavBody } from '@/components/aceternity/resizable-navbar'
 import { Notch } from '@/components/aceternity/notch'
 import { StickyBanner } from '@/components/aceternity/sticky-banner'
-import { CmemMark } from '@/components/brand'
 import { FocusChipRow, FocusRail, PastFocusLink, SIDE_NAV_PILL } from '@/components/focus-nav'
 import { RequestDetail } from '@/components/request-detail'
 import { cn } from '@/lib/utils'
@@ -22,7 +21,7 @@ import { SuggestedAreas } from '@/pages/suggested-areas'
 import { Req } from '@/spec/req'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { Spinner } from '@/components/ui/spinner'
-import { needsYou, OTHER_FOCUS_AREA_ID } from '@/data'
+import { needsYou } from '@/data'
 import { ACTIVE_SOURCE, useStore, useWorkModel, useWorkspace, type FocusSelection, type NavPage } from '@/store'
 import { shownFocusAreaId } from '@/store/slices/view-slice'
 import { useFocusSharesLoader } from '@/live/focus-shares'
@@ -47,16 +46,6 @@ function NavTile({ icon: Icon, active }: { icon: typeof InboxIcon; active: boole
     <span className={cn('relative flex size-7 shrink-0 items-center justify-center rounded-lg border shadow-tile', active ? 'border-accent-border bg-card text-primary' : 'bg-card/60 text-muted-foreground')}>
       <Icon className="size-4" />
     </span>
-  )
-}
-
-/** The header bar: full width at the top of the page, a floating pill once the page scrolls (`Navbar` passes `visible`). */
-function HeaderBody({ visible, children }: { visible?: boolean; children: ReactNode }) {
-  return (
-    // Phones: the pill is 2rem narrower than the bar, so it trims its padding and gaps, and the page title gives way first.
-    <NavBody visible={visible} className={cn('rail-work-header flex h-14 max-w-[1440px] gap-3 bg-card/95 px-4 py-0 md:px-6', visible ? 'header-pill gap-1.5 border border-border/70 px-2.5 md:gap-3 md:px-6' : 'rounded-none border-b border-border/70')}>
-      {children}
-    </NavBody>
   )
 }
 
@@ -116,57 +105,25 @@ function LoadedApp() {
   useEffect(() => (sample ? playSampleDemo() : undefined), [sample, playSampleDemo])
   const selected: FocusSelection = view === 'suggested' || view === 'past-focus' ? { kind: view } : view === 'work' && focusAreaId ? { kind: 'area', focusAreaId } : null
   const pageActive = (id: NavPage) => view === id && !(id === 'work' && focusAreaId)
-  const focusTitle = focusAreaId === OTHER_FOCUS_AREA_ID ? 'Other' : focusAreas.find((area) => area.id === focusAreaId)?.name
-  const heading = view === 'suggested' ? 'Suggested' : view === 'past-focus' ? 'Past focus' : view === 'work' && focusTitle ? focusTitle : PAGES.find((entry) => entry.id === view)!.label
 
   return (
     <MotionConfig reducedMotion="user">
         <TooltipProvider delayDuration={150}>
           <Req ids={['R10.3', 'R10.2']} className="min-h-svh">
             <div className="rail-work-app min-h-svh pb-[calc(6rem+env(safe-area-inset-bottom))] text-foreground md:pb-0">
-              {/* Wireframe controls: not part of the product. */}
-              <StickyBanner hideOnScroll className="min-h-0 flex-wrap justify-start gap-x-3 gap-y-1 border-b border-border/70 bg-card/85 px-4 py-1.5 pr-12 text-xs whitespace-nowrap backdrop-blur-md md:px-6 md:pr-10">
-                {sample && <Badge variant="outline" className="font-normal">Wireframe · sample data</Badge>}
-                {sample && <Req ids={['R13.1']}>
-                  <ToggleGroup type="single" size="sm" variant="outline" spacing={1} className="flex-nowrap" value={workspace.mode} onValueChange={(mode) => mode && setWorkspace({ mode: mode as 'home' | 'web', connected: mode === 'web' || workspace.connected })}>
-                    <ToggleGroupItem value="home" className="h-7 text-xs">At home<span className="hidden md:inline">· localhost:37777</span></ToggleGroupItem>
-                    <ToggleGroupItem value="web" className="h-7 text-xs">On the go<span className="hidden md:inline">· cmem.ai</span></ToggleGroupItem>
-                  </ToggleGroup>
-                </Req>}
-                <div className="ml-auto flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    <Switch id="dark-mode" checked={dark} onCheckedChange={setDark} />
-                    <Label htmlFor="dark-mode" className="text-xs">Dark</Label>
-                  </div>
-                  <div className="hidden">
-                    <Switch id="spec-overlay" checked={showSpec} onCheckedChange={setShowSpec} />
-                    <Label htmlFor="spec-overlay" className="text-xs">Spec IDs</Label>
-                  </div>
-                </div>
-              </StickyBanner>
-
-              <header className="contents">
-                <Navbar className="top-0 z-30">
-                  <HeaderBody>
-                    <Req ids={['R10.4']}>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <CmemMark className="size-8 text-[#D86441]" />
-                        <span className="sr-only md:not-sr-only md:text-[0.95rem] md:font-semibold md:tracking-tight">ContextRail</span>
-                      </span>
-                    </Req>
-                    <nav className="rail-topnav rail-work-tabs" aria-label="主导航"><a href="/rail">工作台</a><a href="/" aria-current="page">My Work</a><a href="/viewer">记忆档案</a></nav>
-                    <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight whitespace-nowrap md:hidden [.header-pill_&]:text-base">{heading}</h1>
-                    <div className="ml-auto flex shrink-0 items-center gap-0.5 md:gap-2">
-
-                      <DeviceFreshness />
-                      <LiveIndicator />
-
-
-                      <span className="rail-header-caption">LOCAL WORKSPACE</span>
-                    </div>
-                  </HeaderBody>
-                </Navbar>
-              </header>
+              {createPortal(
+                <div slot="tools" className="rail-shell-tools">
+                  <DeviceFreshness /><LiveIndicator />
+                  <Switch id="dark-mode" checked={dark} onCheckedChange={setDark} />
+                  <Label htmlFor="dark-mode" className="text-xs">Dark</Label>
+                </div>, document.querySelector('context-rail-shell')!)}
+              {sample && <StickyBanner hideOnScroll className="min-h-0 flex-wrap gap-3 bg-card/85 px-4 py-1.5 text-xs">
+                <Badge variant="outline">Wireframe · sample data</Badge>
+                <ToggleGroup type="single" size="sm" value={workspace.mode} onValueChange={(mode) => mode && setWorkspace({ mode: mode as 'home' | 'web', connected: mode === 'web' || workspace.connected })}>
+                  <ToggleGroupItem value="home">At home</ToggleGroupItem><ToggleGroupItem value="web">On the go</ToggleGroupItem>
+                </ToggleGroup>
+                <Switch id="spec-overlay" checked={showSpec} onCheckedChange={setShowSpec} /><Label htmlFor="spec-overlay">Spec IDs</Label>
+              </StickyBanner>}
 
               <div className="rail-work-layout mx-auto max-w-[1440px] gap-6 px-4 py-4 md:grid md:grid-cols-[52px_minmax(0,1fr)] md:px-6 md:py-6 lg:grid-cols-[184px_minmax(0,1fr)] lg:gap-8">
                 <Req ids={['R16.1']} className="hidden md:block">

@@ -4,3 +4,52 @@
 @media(max-width:650px){.rail-console main{padding:24px 12px 14px}.page-heading{flex-direction:column;gap:17px}.heading-metrics{width:100%;justify-content:space-between}.heading-metrics>div:first-child{border-left:0;padding-left:0}.heading-metrics strong{font-size:16px}.heading-metrics span{font-size:9px}.panel-grid{grid-template-columns:minmax(0,1fr);gap:18px}.panel-body{min-height:0;padding-bottom:16px}.file-search{gap:7px;padding-left:8px}.file-search input{font-size:12px}.file-search button{font-size:10px;padding:7px}.tray-caption{font-size:9px;gap:8px}.tray-caption>span:last-child{max-width:160px;text-align:right}.folder-tray{padding:12px 8px 8px}.rail-console footer{align-items:flex-start;flex-wrap:wrap;font-size:8px}.empty-history{min-height:150px}.page-heading h1{font-size:26px}.capture-overview{justify-content:flex-start;gap:35px;padding:22px 10px}.capture-seal{flex-basis:110px;width:110px;height:110px}}
 
 @media(min-width:1051px){.rail-console main{padding-top:24px}.page-heading{margin-bottom:24px}.panel-body{min-height:210px}.capture-overview{padding-top:18px;padding-bottom:10px}#capture-content .row{padding:9px 0}#capture-content .row>div{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%}#capture-content .row p{margin:0;line-height:1.3}#continuity-content .row{padding-top:8px;padding-bottom:8px}}
+
+/* A desktop overview uses the available viewport; detail remains scrollable. */
+@media(min-width:1051px) and (min-height:680px){
+  .rail-console{height:100dvh;overflow:hidden}
+  .rail-console main{height:calc(100dvh - var(--rail-shell-height));display:flex;flex-direction:column;min-height:0;padding:18px 24px 12px}
+  .page-heading{flex-shrink:0;margin-bottom:20px;gap:18px}
+  .page-heading h1{font-size:24px;margin:3px 0 5px}
+  .eyebrow{font-size:9px;margin-bottom:4px}
+  .workspace-label{font-size:10px}
+  .heading-metrics{padding-top:4px}
+  .folder-tray{display:flex;flex-direction:column;flex:1;min-height:0;padding:12px 10px 10px}
+  .file-search{flex-shrink:0;padding-top:3px;padding-bottom:3px}
+  .file-search input{padding:5px 0}
+  .tray-caption{flex-shrink:0;padding:7px 2px 9px;font-size:9px}
+  .panel-grid{flex:1;min-height:0;grid-template-rows:repeat(2,minmax(0,1fr));gap:12px}
+  .panel{display:flex;flex-direction:column;min-height:0}
+  .panel-bar{flex-shrink:0;min-height:29px}
+  .panel-tab{padding:7px 10px 6px;font-size:11px}
+  .panel-meta{font-size:8px;padding-top:9px}
+  .panel-body{flex:1;min-height:0;padding:3px 12px 10px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--rail-line) transparent;overscroll-behavior:contain}
+  .panel-caption{font-size:9px;line-height:1.6;margin:5px 0 8px}
+  .row{padding:7px 0}
+  .row strong{font-size:12px}
+  .row p{font-size:9px;line-height:1.6;margin-top:3px}
+  #status-summary .row{margin-top:6px}
+  #continuity-content .row{padding-top:2px;padding-bottom:2px;margin:2px 0}
+  #continuity-content .row strong{font-size:11px;line-height:1.35}
+  #continuity-content .row p{line-height:1.4;margin-top:2px}
+  #settings .row{padding-top:5px;padding-bottom:5px}
+  #settings .row strong{font-size:11px;line-height:1.35}
+  #settings .row p{font-size:9px;line-height:1.4;margin-top:2px}
+  #settings .panel-caption:last-child{font-size:8.5px;line-height:1.4}
+  .panel-link{margin-top:6px;padding:5px 8px;font-size:9px}
+  .capture-overview{padding:10px 0 6px;gap:14px}
+  .capture-seal{width:80px;height:80px;flex-basis:80px;border-width:5px;outline-width:3px;outline-offset:3px}
+  .capture-seal strong{font-size:22px}
+  .capture-seal span{font-size:8px}
+  #capture-content .row{padding:6px 0}
+  #capture-content .row p{font-size:12px}
+  #product-list,#history-results{max-height:none;overflow:visible}
+  #products .row{padding:7px 0}
+  .empty-history{min-height:0;padding:18px 10px}
+  .file-glyph{font-size:28px;margin-bottom:10px}
+  .empty-history p{margin:8px 0 0;font-size:10px}
+  .source-details{margin-top:8px;font-size:9px}
+  .rail-console footer{flex-shrink:0;padding-top:10px;font-size:8px}
+  .rail-console footer button{font-size:9px;padding:4px 7px}
+  #error,#notice{flex-shrink:0;padding:5px 10px;margin-bottom:10px;font-size:11px;max-height:65px;overflow:auto}
+}

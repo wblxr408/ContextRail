@@ -48,6 +48,7 @@ export function SessionList({ header, sessions, isLoading, hasMore, loadError, o
           {loadError}
           {!isLoading && <button onClick={onLoadMore}>Retry</button>}
         </div>}
+        <div className="rail-memory-grid">
         {sessions.map(session => {
           const ref = catalogEntryRef(session);
           return (
@@ -59,6 +60,7 @@ export function SessionList({ header, sessions, isLoading, hasMore, loadError, o
             />
           );
         })}
+        </div>
         {sessions.length === 0 && !loadError && (
           <div className="session-list-empty">
             {isLoading ? 'Loading sessions…' : <><h3>No sessions to show</h3><p>Sessions appear as work is captured. Try another project if a filter is selected.</p></>}

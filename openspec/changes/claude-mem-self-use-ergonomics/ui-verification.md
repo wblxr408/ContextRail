@@ -65,3 +65,13 @@ My Work 的 TypeScript/Vite生产构建通过，Viewer类型检查与esbuild生�
 ## 保留的缺口
 
 OpenSpec5.4仍仅余Codex真实compact模型服务拒绝（model_not_found）；未更换账号或模型。原 main 模型召回曾超时/失败，Markdown能浏览不等于召回服务恢复；工作台如实显示队列与失败。UI预览为有界最近资料，既不提供全库全文搜索，也不把未绑定会话自动加入。人工查看依据任务版本和文件元数据，不能当作正文验收。Basic Memory写工具仍不可用，交接/经验待同步草稿保留在当前聊天outputs，未声称已索引。
+
+## 固定导航、一屏工作台与多栏档案（用户布局纠正）
+
+用户反馈截图所示导航在三页间跳动，桌面工作台有不必要整页滚动，记忆档案需要两至三栏。本轮保留 MedPanel 的视觉规则与原数据来源，新增单一 rail-shell.js 页头组件，三个静态入口均在 React 根节点之外直接使用，原主题/来源/连接控件通过 portal 与 slot 保留；加载状态不卸载导航。页签宽度固定88px，只有当前态改变。
+
+当前本机1280×720：改前工作台 document 高1095px，导航x=241.60；My Work 导航x=167.14、y=31.81；档案导航x=211.70。改后统一导航x=361.20、y=0、总宽274px，三页保持一致。工作台 document 为1280×720，页尾底边708px，六面板同屏；长交付物、故障及展开详情仍在所属面板内滚动，不丢弃记录。小于1051px宽或680px高时恢复自然页面滚动。没有将文字或页面整体缩放来凑屏。
+
+档案1280px为三列390px，1024px为双列466px，390px为单列352px；390px的页面client/scrollWidth均为390px。卡片来源与工具拆成两行，避免多栏挤压导致英文标签逐字折行。档案实际滚动720px后共用页头仍top=0。viewport已恢复默认。截图：当前聊天outputs/context-rail-one-screen.jpg与context-rail-memory-columns.jpg。
+
+My Work TypeScript/Vite、Viewer TypeScript/esbuild与OpenSpec strict验证通过。共用页头移除旧Navbar后，构建报告未使用的旧页头类型/标题变量，已删除这些旧呈现变量后重建通过。没有执行旧业务回归、启动/健康/导入探针或样式字符串断言。实际部署为Windows本机既有服务的静态资产热读取，没有重启原Hook或记忆服务。任务5.4既有远端compact限制保持原记录。
