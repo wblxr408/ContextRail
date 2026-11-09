@@ -1,6 +1,11 @@
 # ContextRail
 
-本地界面已接入：运行 `./Open-ContextRailUI.ps1`，使用说明见 [CLAUDE_MEM_UI.md](CLAUDE_MEM_UI.md)。
+**本地面板更新（2026-11-09）**。ContextRail 和 Context Bridge 各有独立页面和导航，采用同一套 Maple Ridge House 暖灰浮雕样式。
+
+- 运行 `./Open-ContextRailUI.ps1 -Page /rail`，查看采集、任务连续性、文件历史和交付物。
+- 运行 `./Open-ContextBridgeUI.ps1`，查看本项目的交接版本、要求账本和来源原文。`./Install-ContextBridgeShortcut.ps1` 会在 Windows 桌面创建使用透明桥形图标的快捷方式。
+
+启动前需要已有的项目客户端接线。完整用法见 [本地界面使用说明](CLAUDE_MEM_UI.md)。
 
 2026-11-01：A–D 四阶段完整使用与实际边界见 [CLAUDE_MEM_SELF_USE.md](CLAUDE_MEM_SELF_USE.md)。本文件的第一阶段/历史验收说明按其当时范围保留。
 

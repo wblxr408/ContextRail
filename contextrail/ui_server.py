@@ -244,6 +244,13 @@ class Handler(BaseHTTPRequestHandler):
         if path in ('/api/work-view/events','/stream'):return self.stream(path)
         if path=='/api/work-view':return self.send(200,b.snapshot())
         if path=='/api/rail/config':return self.send(200,b.config())
+        if path in {'/api/bridge/bundles','/api/bridge/bundle','/api/bridge/source'}:
+            from .bridge_panel import BridgePanel
+            panel=BridgePanel(b.root)
+            if path.endswith('/bundles'):return self.send(200,panel.listing())
+            selected=q.get('bundle',[''])[0]
+            if path.endswith('/source'):return self.send(200,panel.source(selected,q.get('file',[''])[0]))
+            return self.send(200,panel.detail(selected))
         if path=='/api/rail/status':return self.send(200,b.status())
         if path=='/api/rail/products':return self.send(200,b.products())
         if path=='/api/rail/history':return self.send(200,b.history(q.get('file',[''])[0]))
@@ -281,6 +288,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ('/','/work-view','/work-view/'):relative='work-view/index.html'
         elif path in ('/viewer','/viewer/'):relative='viewer.html'
         elif path in ('/rail','/rail/'):relative='rail.html'
+        elif path in ('/bridge','/bridge/'):relative='bridge.html'
         else:relative=path.lstrip('/')
         target=(STATIC/relative).resolve()
         if not target.is_relative_to(STATIC.resolve()):raise AccessDenied('Static path escapes the installed UI.')
@@ -322,7 +330,8 @@ def make_server(registry,*,port=0,memory_root=None):return Server(Backend(regist
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--registry',type=Path,required=True);p.add_argument('--port',type=int,default=37778)
-    p.add_argument('--memory-root',type=Path);p.add_argument('--idle-timeout',type=int,default=600);p.add_argument('--open',action='store_true');args=p.parse_args()
+    p.add_argument('--memory-root',type=Path);p.add_argument('--idle-timeout',type=int,default=600);p.add_argument('--open',action='store_true')
+    p.add_argument('--page',choices=('/','/rail','/bridge','/viewer'),default='/');args=p.parse_args()
     if not 0<=args.port<=65535 or args.idle_timeout<30:p.error('Choose a port and an idle timeout of at least 30 seconds.')
     backend=Backend(args.registry,args.memory_root);runtime=backend.root/'.context-rail/ui-runtime.json'
     try:
@@ -330,7 +339,7 @@ def main():
         from urllib.request import urlopen
         with urlopen('http://127.0.0.1:'+str(prior['port'])+'/api/rail/config',timeout=2) as response:data=json.load(response)
         if data['workspace']==str(backend.root) and data['task']==backend.scope.task:
-            url='http://127.0.0.1:'+str(prior['port'])+'/'
+            url='http://127.0.0.1:'+str(prior['port'])+args.page
             if args.open:__import__('webbrowser').open(url)
             print(url,flush=True);return
     except (OSError,ValueError,KeyError):pass
@@ -342,7 +351,7 @@ def main():
             if server.active_streams==0 and time.monotonic()-server.last_request>args.idle_timeout:
                 server.stopping=True;server.shutdown();return
     threading.Thread(target=idle,daemon=True).start()
-    if args.open:__import__('webbrowser').open(url)
+    if args.open:__import__('webbrowser').open(url.rstrip('/')+args.page)
     print(url,flush=True)
     try:server.serve_forever()
     finally:server.stopping=True;server.server_close()

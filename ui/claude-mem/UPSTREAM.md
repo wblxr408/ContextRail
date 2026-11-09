@@ -2,7 +2,7 @@
 
 Source: https://github.com/thedotmack/claude-mem/tree/b80b29bc49d08a71312f44b8feacb2e7585edff4
 
-License: AGPL-3.0, preserved in LICENSE and NOTICE. This source tree is vendored and locally modified. React and other bundled dependency notices, Geist OFL and Hanken Grotesk OFL are shipped with the static assets. Monaspace assets are omitted; the classic viewer uses local fallback fonts.
+The pinned upstream revision uses Apache-2.0. Its LICENSE and NOTICE accompany the locally modified source. The static assets include bundled dependency notices and the OFL texts for Geist and Hanken Grotesk. The classic viewer uses local fallback fonts.
 
 ## Kept upstream
 
@@ -12,7 +12,7 @@ License: AGPL-3.0, preserved in LICENSE and NOTICE. This source tree is vendored
 
 ## Local adaptations
 
-- User-requested MedPanel presentation: `contextrail/ui_static/context-theme.css` supplies shared visual tokens and folder navigation; `rail.html/css/js` organize original status into six panels. The generated ContextRail PNG is shared by headers/favicons. My Work's CmemMark now displays the local product mark; original native AgentMark paths remain. See `CONTEXT_RAIL_BRAND.md` for reference, palette, fonts and asset ownership.
+- User-selected Maple Ridge House presentation (2026-11-04 screenshot supersedes the earlier MedPanel interpretation): `contextrail/ui_static/context-theme.css` supplies shared visual tokens and raised/pressed navigation controls; `rail.html/css/js` organize original status into six panels. The generated ContextRail PNG is shared by headers/favicons. My Work's CmemMark now displays the local product mark; original native AgentMark paths remain. See `CONTEXT_RAIL_BRAND.md` for reference, palette, fonts and asset ownership.
 
 - `my-work/src/App.tsx`: ContextRail identity, project settings label and local workbench link; remove Team/feedback/GitHub promotion controls.
 - `my-work/src/pages/my-rules.tsx`: existing registry-backed Codex/Claude project toggles, exact configuration revision, abortable read and visible failures.
