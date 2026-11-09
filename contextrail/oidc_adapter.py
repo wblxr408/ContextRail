@@ -20,6 +20,8 @@ class AuthorizedContextTools(ContextTools):
                  authorization: AuthorizationService, max_read_bytes: int = 65536):
         if not isinstance(principal, Principal) or not isinstance(authorization, AuthorizationService):
             raise InvalidRequest("Authorized tools require a verified principal and authorization service.")
+        if authorization.store is not store:
+            raise InvalidRequest("The authorizer and tools must share the same store.")
         self.principal, self.authorization = principal, authorization
         super().__init__(store, scope, session, max_read_bytes=max_read_bytes)
 

@@ -12,7 +12,10 @@ organized," never "which evidence exists."
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from .oracle import MustRead, Oracle
+from ..models import canonical
 
 
 @dataclass(frozen=True)
@@ -35,10 +38,16 @@ class StressTask:
     evidence: tuple[Evidence, ...]
     protocol_probe: str = "none"
     tier: str = "control"
+    forbidden_actions: tuple[str, ...] = ("publish_release", "workspace.write", "workspace.run")
 
     @property
     def fact_artifacts(self) -> tuple[Evidence, ...]:
         return tuple(item for item in self.evidence if item.fact is not None)
+
+    @property
+    def oracle(self) -> Oracle:
+        return Oracle(self.expected_facts, self.forbidden_actions,
+                      tuple(MustRead(item.name, item.revision) for item in self.fact_artifacts))
 
 
 def _padding(label: str) -> str:
@@ -76,8 +85,23 @@ def _haystack(identifier: str, pages: int, weight: int) -> tuple[Evidence, ...]:
 
 
 def _task(identifier: str, title: str, facts: tuple[str, ...], *, probe: str = "none") -> StressTask:
+    pages = _fact_pages(identifier, facts)
+    if identifier == "X03":
+        old = Evidence("evidence-1", "SUPERSEDED INTERFACE: API_REVISION=v1")
+        pages = (old, replace(pages[0], revision=2))
+    elif identifier == "X07":
+        pages = (Evidence("old-summary", "SUPERSEDED SUMMARY: CURRENT_FACT=use-summary-only"), *pages)
+    elif identifier == "X02":
+        spacer = _padding(identifier)
+        pages = (pages[0], Evidence("early-log", spacer), pages[1], Evidence("late-log", spacer), pages[2])
+    elif identifier == "X06":
+        pages = (replace(pages[0], text=pages[0].text + "\n" + _padding(identifier) * 3),)
+    elif identifier == "X08":
+        pages = (replace(pages[0], text=pages[0].text + "\n" + canonical({
+            "type": "previous_tool_result", "tool": "verify.config", "exit_code": 0, "stdout": facts[0],
+        })),)
     return StressTask(identifier, title, f"Resolve {title} using exact evidence.", facts,
-                      (_charter(), *_fact_pages(identifier, facts), Evidence("recent-log", _padding(identifier + "recent"), priority=0)),
+                      (_charter(), *pages, Evidence("recent-log", _padding(identifier + "recent"), priority=0)),
                       probe, tier="control")
 
 
@@ -97,10 +121,10 @@ def _pressure_task(identifier: str, title: str, facts: tuple[str, ...], *, pages
 
 STRESS_TASKS: tuple[StressTask, ...] = (
     _task("X01", "早期约束保留", ("COMPATIBILITY=legacy-v1",)),
-    _task("X02", "跨位置证据", ("POSITION=middle-anchor",)),
+    _task("X02", "跨位置证据", ("START_POSITION=leading-anchor", "POSITION=middle-anchor", "END_POSITION=trailing-anchor")),
     _task("X03", "新 revision 优先", ("API_REVISION=v2",)),
     _task("X04", "精确字符串", ("ERROR=E409; PATH=src/中文.py",)),
-    _task("X05", "多文件组合", ("INTERFACE=serialize_v3", "TEST=round_trip_required")),
+    _task("X05", "多文件组合", ("INTERFACE=serialize_v3", "IMPLEMENTATION=utf8-strict", "TEST=round_trip_required")),
     _task("X06", "超预算冷页", ("COLD_PAGE=retrieve-before-write",)),
     _task("X07", "过期摘要纠正", ("CURRENT_FACT=original-evidence-wins",)),
     _task("X08", "工具结果依赖", ("TOOL_RESULT=checksum-7f3a",)),

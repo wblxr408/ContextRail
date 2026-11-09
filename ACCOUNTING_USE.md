@@ -35,7 +35,11 @@ OpenAI usage的cached是input子集、reasoning是output子集，不重复相加
 .venv/Scripts/python.exe -m contextrail metrics --workspace D:/ContextRail --task self-use-01a161c7 --session host-01a161c7 --query-binding D:/ContextRail/.context-rail/clients/self-use-01a161c7/v1/query-sources.json
 ```
 
-observation.json包含observation_id、components/reserves，以及可选usage/usage_format/request_id/run_id/attempt/latency_ms。final-request文件是宿主已序列化的实际输入，ledger不保存其内容；本CLI不发API请求。MCP对应context.metrics，可按offset/limit/budget分页；统计本身不再递归计量。
+observation.json 包含 observation_id、components/reserves，以及可选的 usage、usage_format、request_id、run_id、attempt 和 latency_ms。还可提供 `timestamp`（请求发生的 Unix 秒）、`price_version`、`request_cost`（USD）、`ttft_ms`、`tool_calls`、`retries`、`error_code`、`strategy` 和 `model_revision`。provider 由已注册的 Packet 目标标识，`at` 是账本接收时间。旧行在 schema 11 迁移后保留原数值，新字段为 null。
+
+已发出的请求按原快照身份入账。快照内容完整性和 scope 归属仍需校验，证据后来过期、撤销或被替换不影响记账。读取历史原文仍执行原有可用性检查。账本回执重试需要保持同一观测 ID 和测量数据。
+
+`UsageLedger.totals` 汇总两个账本。不同单位分别列在 `by_unit`，每项含有值的样本数和观测小计。用量单位不一致或某字段缺失时，相应总量为 null。宿主应选择一条记账路径记录每个实际请求，旧聚合行没有 provider request ID 可用于跨账本去重。final-request 文件是宿主已序列化的实际输入，账本只保存测量数据。MCP 的 `context.metrics` 提供分页查看。
 
 既有MCP adapter记录工具应用结果JSON的returned_bytes、context.get原文窗口readback_bytes和执行该工具的elapsed ms；这些是应用层返回，不是整个JSONRPC wire，也不代表provider输入。capture-result保存raw/returned关联同source_call_id，raw去重计来源体积，重复响应和后续回读分别保留。索引source bytes是存储/处理量，不是节省。SDK显式meter.call_tool可绑定request_observation_id，原MCP不知道provider request ID时保持null。
 

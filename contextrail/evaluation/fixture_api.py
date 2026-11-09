@@ -7,7 +7,7 @@ import json
 from typing import Type
 
 from .models import DeterministicEvidenceModel
-from .tasks import STRESS_TASKS
+from .tasks import ALL_TASKS
 
 
 def fixture_handler(model: DeterministicEvidenceModel) -> Type[BaseHTTPRequestHandler]:
@@ -50,5 +50,5 @@ def fixture_handler(model: DeterministicEvidenceModel) -> Type[BaseHTTPRequestHa
 
 
 def serve_fixture_api(host: str = "127.0.0.1", port: int = 8787) -> None:
-    with ThreadingHTTPServer((host, port), fixture_handler(DeterministicEvidenceModel(STRESS_TASKS))) as server:
+    with ThreadingHTTPServer((host, port), fixture_handler(DeterministicEvidenceModel(ALL_TASKS))) as server:
         server.serve_forever()

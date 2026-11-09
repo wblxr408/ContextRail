@@ -335,7 +335,9 @@ def project_command(args):
                         body=None
                         if args.final_request:
                             with args.final_request.open('rb') as stream:body=stream.read(16*1024*1024+1)
-                        if data.keys()-{'observation_id','components','reserves','usage','usage_format','request_id','run_id','attempt','latency_ms'}:raise ValueError()
+                        if data.keys()-{'observation_id','components','reserves','usage','usage_format','request_id',
+                                        'run_id','attempt','latency_ms','timestamp','price_version','request_cost',
+                                        'ttft_ms','tool_calls','retries','error_code','strategy','model_revision'}:raise ValueError()
                         output=HostAccounting(store,config.scope,args.session).record_request(packet,final_request=body,**data)
                     except (OSError,ValueError,TypeError,KeyError):raise InvalidRequest('Invalid host packet or observation arguments') from None
             print(canonical(output));return

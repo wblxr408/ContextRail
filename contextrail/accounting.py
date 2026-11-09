@@ -55,7 +55,9 @@ class HostAccounting:
 
     def record_request(self,packet,*,observation_id,final_request=None,components=None,reserves=None,
                        usage=None,usage_format=None,token_counter=None,counter_id=None,
-                       request_id=None,run_id=None,attempt=1,latency_ms=None):
+                       request_id=None,run_id=None,attempt=1,latency_ms=None,timestamp=None,price_version=None,
+                       request_cost=None,ttft_ms=None,tool_calls=None,retries=None,error_code=None,strategy=None,
+                       model_revision=None):
         identifier(observation_id)
         if not isinstance(packet,Packet) or packet.target.session!=self.session:raise InvalidRequest('Packet must belong to the bound accounting session')
         if final_request is not None and (not isinstance(final_request,bytes) or len(final_request)>16*1024*1024):raise InvalidRequest('Final request must be at most 16 MiB serialized bytes')
@@ -92,9 +94,12 @@ class HostAccounting:
             'usage_source':'openai_reported_usage' if usage is not None else 'trusted_counter' if counted is not None else 'not_observed',
             'payload_retention':'counts_only; equal_length_payload_content_is_not_verified'}
         unit='tokens' if usage is not None or counted is not None else 'unknown'
+        metadata = dict(timestamp=timestamp, price_version=price_version, request_cost=request_cost,
+                        ttft_ms=ttft_ms, tool_calls=tool_calls, retries=retries, error_code=error_code,
+                        strategy=strategy, model_revision=model_revision)
         expected={'unit':unit,'input_units':inputs,'output_units':counts['output_tokens'],'cached_input_units':counts['cached_input_tokens'],
                   'cache_write_units':counts['cache_write_tokens'],'latency_ms':latency_ms,'request_id':request_id,'run_id':run_id,'attempt':attempt,
-                  'snapshot':packet.snapshot,'packet_sha256':packet.sha256}
+                  'snapshot':packet.snapshot,'packet_sha256':packet.sha256,**metadata}
         def existing():
             row=self.store.db.execute("SELECT * FROM request_usage WHERE scope=? AND session=? AND json_extract(observation_json,'$.id')=?",(self.scope.key,self.session,observation_id)).fetchone()
             if row is None:return None
@@ -106,7 +111,7 @@ class HostAccounting:
         try:
             record=UsageLedger(self.store).record_request(self.scope,packet,unit=unit,input_units=inputs,output_units=counts['output_tokens'],
                 cached_input_units=counts['cached_input_tokens'],cache_write_units=counts['cache_write_tokens'],latency_ms=latency_ms,
-                request_id=request_id,run_id=run_id,attempt=attempt,observation=observation)
+                request_id=request_id,run_id=run_id,attempt=attempt,observation=observation,**metadata)
         except Conflict:
             previous=existing()
             if previous is not None:return previous

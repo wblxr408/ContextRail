@@ -188,11 +188,11 @@ class AdvancedContextTests(RailTest):
         record = ledger.record(self.scope, packet, unit="provider_tokens", input_units=500,
                                cached_input_units=320, cache_write_units=60, output_units=90, latency_ms=250)
         self.assertEqual((record.provider, record.model), (self.a.provider, self.a.model))
-        self.assertEqual(ledger.totals(self.scope), {"requests": 1, "input_units": 500,
-                                                      "cached_input_units": 320, "cache_write_units": 60,
-                                                      "output_units": 90, "latency_ms": 250,
-                                                      "aggregate_requests": 1, "request_ledger_requests": 0,
-                                                      "request_ledger_usage_known": 0})
+        totals = ledger.totals(self.scope)
+        expected = {"requests": 1, "input_units": 500, "cached_input_units": 320, "cache_write_units": 60,
+                    "output_units": 90, "latency_ms": 250, "aggregate_requests": 1,
+                    "request_ledger_requests": 0, "request_ledger_usage_known": 0}
+        self.assertEqual({key: totals[key] for key in expected}, expected)
         with self.assertRaises(InvalidRequest):
             ledger.record(self.scope, packet, unit="provider_tokens", input_units=10, cached_input_units=11)
 

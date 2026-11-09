@@ -240,6 +240,14 @@ class RequestUsage:
     latency_ms: int | None
     usage_known: bool
     at: float
+    timestamp: float | None = None
+    price_version: str | None = None
+    request_cost: float | None = None
+    ttft_ms: int | None = None
+    tool_calls: int | None = None
+    retries: int | None = None
+    error_code: str | None = None
+    strategy: str | None = None
 
 
 @dataclass(frozen=True)

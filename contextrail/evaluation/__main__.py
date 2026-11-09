@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from importlib import import_module
 from pathlib import Path
 
-from .agent import MinimalApiAgent, run_stress_suite
+from .agent import MinimalApiAgent, STRATEGIES, STRESS_STRATEGIES, run_stress_suite
 from .dashboard import serve_dashboard
 from .fixture_api import serve_fixture_api
 from .models import DeterministicEvidenceModel, OpenAICompatibleModel
@@ -19,6 +20,7 @@ from .tasks import ALL_TASKS, PRESSURE_TASKS, STRESS_TASKS
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="ContextRail API-agent evaluation host")
     commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("oracle-check", help="Check a synthetic task observation from stdin")
     stress = commands.add_parser("stress", help="Run the custom A/B/C context-strategy tasks")
     stress.add_argument("--model", choices=("fixture", "api"), default="fixture")
     stress.add_argument("--suite", choices=("control", "pressure", "all"), default="control",
@@ -30,6 +32,9 @@ def main(argv: list[str] | None = None) -> int:
     stress.add_argument("--min-paired-runs", type=int, default=36,
                         help="Minimum paired A/C observations before a provider-API result is claim-ready.")
     stress.add_argument("--price-file", type=Path, help="Versioned JSON price sheet for API cost estimates")
+    stress.add_argument("--summary-baseline", action="store_true", help="Add the billed B-summary baseline.")
+    stress.add_argument("--prefix-tokenizer", metavar="MODULE:CALLABLE",
+                        help="Trusted local text-to-token-IDs function for repeat-prefix measurement.")
     swe = commands.add_parser("swebench-manifest", help="Write frozen eight-task SWE-bench Verified manifest")
     swe.add_argument("--output", type=Path, default=Path("evaluation-runs/swebench-verified-subset.json"))
     swe_inputs = commands.add_parser("swebench-inputs", help="Fetch eight official agent-safe SWE-bench task inputs")
@@ -56,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
                           help="Compiler byte budget; generous by default so completeness, not room, is measured")
     ablation.add_argument("--chart", action="store_true", help="Also render a PNG chart (requires matplotlib)")
     args = parser.parse_args(argv)
+    if args.command == "oracle-check":
+        from .oracle import check_stdin
+        return check_stdin()
     if args.command == "environment":
         print(environment_status())
         return 0
@@ -95,10 +103,24 @@ def main(argv: list[str] | None = None) -> int:
     # be seeded with the same suite that will be run.
     model = DeterministicEvidenceModel(suite) if args.model == "fixture" else OpenAICompatibleModel.from_environment()
     price_book = PriceBook.from_path(args.price_file) if args.price_file else None
-    results = run_stress_suite(MinimalApiAgent(model, context_budget=args.budget, price_book=price_book), suite,
+    tokenizer = None
+    if args.prefix_tokenizer:
+        module_name, separator, name = args.prefix_tokenizer.partition(":")
+        if not separator or not module_name or not name.isidentifier():
+            parser.error("--prefix-tokenizer requires MODULE:CALLABLE")
+        try:
+            tokenizer = getattr(import_module(module_name), name)
+        except (ImportError, AttributeError) as exc:
+            parser.error(f"Cannot load prefix tokenizer: {exc}")
+        if not callable(tokenizer):
+            parser.error("--prefix-tokenizer must refer to a callable")
+    agent = MinimalApiAgent(model, context_budget=args.budget, price_book=price_book,
+                            tokenizer=tokenizer, tokenizer_id=args.prefix_tokenizer)
+    results = run_stress_suite(agent, suite,
                                args.output, repetitions=args.repetitions,
                                evidence_kind="fixture" if args.model == "fixture" else "provider_api",
-                               min_paired_runs=args.min_paired_runs)
+                               min_paired_runs=args.min_paired_runs,
+                               strategies=STRESS_STRATEGIES if args.summary_baseline else STRATEGIES)
     print(f"{sum(item.success for item in results)}/{len(results)} successful runs; report: {args.output / 'report.md'}")
     return 0
 

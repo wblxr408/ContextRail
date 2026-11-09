@@ -161,6 +161,8 @@ print(s.db.execute('SELECT count(*) FROM jobs').fetchone()[0]);s.db.close()
         UsageLedger(self.store).record_request(self.scope,self.packet,unit='tokens',input_units=20,output_units=4,request_id='legacy-provider')
         self.store.db.execute('DROP INDEX request_usage_observation')
         self.store.db.execute('ALTER TABLE request_usage DROP COLUMN observation_json')
+        for field in ('timestamp','price_version','request_cost','ttft_ms','tool_calls','retries','error_code','strategy'):
+            self.store.db.execute(f'ALTER TABLE request_usage DROP COLUMN {field}')
         self.store.db.execute('PRAGMA user_version=9');self.store.close()
         self.store=Store(self.config.store);self.addCleanup(self.store.close);self.tools=ContextTools(self.store,self.scope,'host')
         self.assertEqual(self.store.get(self.scope,self.ref).content,('证据🙂'*1000).encode())
@@ -172,7 +174,9 @@ print(s.db.execute('SELECT count(*) FROM jobs').fetchone()[0]);s.db.close()
     def test_cli_record_request_metrics_and_efficiency(self):
         self.metrics();packet=self.root/'packet.json';packet.write_text(json.dumps(asdict(self.packet),ensure_ascii=False),encoding='utf-8')
         final=self.root/'final.bin';final.write_bytes(b'actual-serialized-payload')
-        receipt=self.root/'receipt.json';receipt.write_text(json.dumps({'observation_id':'cli-observation','components':{'system':[0,6]}}),encoding='utf-8')
+        receipt=self.root/'receipt.json';receipt.write_text(json.dumps({'observation_id':'cli-observation',
+            'components':{'system':[0,6]},'timestamp':1200.0,'ttft_ms':15,'latency_ms':25,'retries':0,'tool_calls':1,
+            'price_version':'contract-v1','request_cost':0.0005,'strategy':'C'}),encoding='utf-8')
         self.store.close()
         args=[sys.executable,'-m','contextrail','record-request','--workspace',str(self.root),'--session','host','--packet',str(packet),'--input',str(receipt),'--final-request',str(final)]
         one=subprocess.run(args,capture_output=True,timeout=30);self.assertEqual(one.returncode,0,one.stderr.decode('utf-8','replace'))
@@ -180,6 +184,8 @@ print(s.db.execute('SELECT count(*) FROM jobs').fetchone()[0]);s.db.close()
         report=subprocess.run([sys.executable,'-m','contextrail','metrics','--workspace',str(self.root),'--session','host'],capture_output=True,timeout=30)
         self.assertEqual(report.returncode,0,report.stderr.decode('utf-8','replace'));row=json.loads(report.stdout)['requests']['entries'][0]
         self.assertEqual(row['observation']['final_request_bytes'],len(final.read_bytes()));self.assertIsNone(row['observation']['input_tokens'])
+        self.assertEqual((row['timestamp'],row['ttft_ms'],row['retries'],row['request_cost'],row['strategy']),
+                         (1200.0,15,0,0.0005,'C'))
 
     def test_concurrent_transport_retry_has_one_request_effect(self):
         self.metrics()

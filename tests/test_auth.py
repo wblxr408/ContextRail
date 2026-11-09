@@ -63,6 +63,8 @@ class AuthorizationTests(RailTest):
         self.other = Principal("https://login.example.test/realms/contextrail", "user-other")
         self.authorization.create_tenant(self.scope.tenant)
         self.authorization.create_project(self.scope.tenant, self.scope.project)
+        self.authorization.register_identity(self.principal)
+        self.authorization.grant_scope_access(self.principal, self.scope)
 
     def test_requested_scope_is_authorized_against_trusted_principal(self):
         ref = self.put(content=b"private evidence")

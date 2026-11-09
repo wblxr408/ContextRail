@@ -159,15 +159,24 @@ new_lease = store.activate(scope, handoff.id)
 
 评测框架用于验证一个受约束命题：**在同一宿主、同一模型、同一工具权限下，当任务质量不劣于完整历史基线时，ContextRail 能否降低重复上下文输入、每成功任务成本与端到端时延**。完整方法学见 [工程测评计划](docs/engineering-evaluation-plan.md)。
 
-三种上下文策略共享同一宿主与模型，唯一变量是上下文如何组织：
+以下策略共享同一宿主、模型和任务工具权限。纯摘要组将生成摘要的额外请求计入成本和总时延。
 
 | 代号 | 策略 | 命题 |
 |---|---|---|
 | A | 完整历史 | 质量与成本基线 |
-| B | 固定窗口截断 | 仅压缩/丢弃信息的风险（纯摘要第二基线尚未实现） |
+| B | 固定窗口截断 | 丢弃早期证据的影响 |
+| B-summary | 纯摘要 | 用同一模型先生成摘要，任务首轮仅发送摘要。模型可用相同工具回读原文 |
 | C | ContextRail | 版本化 Snapshot + Packet + 冷页精确回读能否在质量不劣时减少重复输入 |
 
-**质量判据是执行式的**，不使用 CodeBLEU 或任何文本相似度指标：SWE-bench 侧用官方 `FAIL_TO_PASS` + `PASS_TO_PASS`；自建压力任务侧用确定性检查（当前为关键事实 containment + 协议边界的真实 Store 校验）。评分先过质量门（成功率非劣、必需事实零遗漏、协议/权限零违反），再比成本。
+每个合成任务的隐藏 oracle 记录精确事实、禁止动作、必读 artifact 与 revision，以及可执行验收命令。Runner 根据实际发送的 Packet 和原文回读确认覆盖，运行验收命令后记录结果。摘要本身不满足原文必读条件。SWE-bench 使用官方 `FAIL_TO_PASS` 和 `PASS_TO_PASS`。对照先评估质量，再比较成本。
+
+```powershell
+python -m contextrail.evaluation stress --model fixture --suite all --summary-baseline --output evaluation-runs/oracle-comparison
+```
+
+运行目录包含 `oracle/<task>.json`、每次运行的 `usage.jsonl`、trace、结果与 `comparison.json`。报告按已观测的缓存状态汇总请求和整轮 P50/P95。缓存热表示 provider 报告缓存输入大于零，冷表示显式报告零，缺失单列为 unknown。报告还列出缓存命中率和覆盖率、Packet 字节与请求输入 token 比、冷页读取次数和字节量、重复回读率、工具时延及后续模型请求数。
+
+API 模式默认请求流式响应，TTFT 从发起请求到首个内容或工具增量。仅支持非流式响应的端点可设 `CONTEXT_RAIL_EVAL_STREAM=0`，TTFT 保留 unknown。可选的 `--prefix-tokenizer MODULE:CALLABLE` 接收可信本机分词函数，计算同一运行内重复的输入 token 前缀占比。此指标使用客户端序列化和显式 tokenizer，缓存命中单独取 provider usage。参见 [Chat Completions API](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)。
 
 Dashboard 中的 **L1/L2/L3 是宿主复杂度层级**，不是模型能力分层：
 
@@ -181,11 +190,9 @@ Dashboard 中的 **L1/L2/L3 是宿主复杂度层级**，不是模型能力分�
 
 **已跑通（fixture 级）**：A/B/C packet 构造 + 工具 loop + trace/CSV/report 生成；协议确定性测试 X09–X12；配对 bootstrap CI 与非劣决策机（fixture 数据被强制标为 `mechanism_only`，防止把 fixture 当性能结论）；PriceBook 计费；`OpenAICompatibleModel` 是可对接真 provider 的 HTTP 客户端（需人工设置环境变量与 endpoint）。
 
-**脚手架 / 未接通**：SWE-bench 编码 agent 端到端（`run_coding_task` 目前只被单测触发，CLI 无命令实际产出 patch 并交官方 verifier）；外部 L2/L3 agent（adapter 存在但默认不可用、未验证跑过）；switching 多 profile 实验。
+**仍需真实运行**。SWE-bench 官方 verifier、外部 L2/L3 agent 和真实 provider 的多 profile 对照需要配置运行环境。Fixture 报告只验证收集和判定机制。
 
-**计划写了但代码尚缺**：压力任务侧的完整 oracle 任务卡（`required_facts`/`forbidden_actions`/`must_read`+revision/`acceptance.commands`）；B 的纯摘要基线；TTFT、P50/P95、冷/热缓存分离时延；重复前缀 token 比例、cache 命中率、Packet-bytes/tokens 比、冷页往返统计；usage record 的部分计划字段（provider、timestamp、price_version、request_cost、tool_calls、retries、error_code）。
-
-**已知缺陷（待修）**：`record_request_usage` 用 `require_current=True` 校验快照，会因任务后续写入自增 version 而拒绝记录已发生请求的用量（`store.py`）；`usage_totals` 只聚合旧 `usage_records` 表，漏掉 request-level 账本（`store.py`/`policy.py`）；`switching.py` 违反"缺失即 unknown"原则，把 None 强制成 0；四维 scope 隔离在授权层（`auth.py`）只强制了 tenant+project 两维，branch/task 未校验。
+**请求记账**。已发生请求可以在后续任务写入、证据撤销或过期后关联原快照。汇总读取两个账本，按 unit 提供观测小计和样本覆盖率。切换实验按实际请求入账，任一请求缺失的用量字段保留 unknown。字段和迁移说明见 [请求计量](ACCOUNTING_USE.md)。
 
 ## 本地传输
 
@@ -248,7 +255,7 @@ docs/             架构说明、实现清单、评测计划与原有研究资�
 
 插件要求宿主在挂载前提供可信 Principal 或 capability，并在插件请求时对 `principal + scope + action` 返回授权结果。请求中的 `tenant`、`project`、`user_id` 和 `role` 都不是身份凭据。插件必须把宿主结果绑定到 Scope/session，不能让模型覆盖它。默认核心不验证 JWT、不管理 membership，也不运营 IAM。
 
-详细责任划分见 [插件范围审计](docs/plugin-scope-audit.md)。当目标宿主明确要求直接 OIDC 对接时，可使用 [可选 OIDC 适配器](docs/security/keycloak-oidc-integration.md)。当前 `ContextTools` 和 `serve` 保留为受信任本地宿主接口；不得将它们直接作为未认证的网络 API 暴露。
+详细责任划分见 [插件范围审计](docs/plugin-scope-audit.md)。启用可选 OIDC 适配器时，由可信管理端配置租户或项目角色，再调用 `AuthorizationService.grant_scope_access(principal, scope)` 授权已存在的完整 `tenant/project/branch/task`。旧角色记录保留，访问既有任务也需要补发精确授权。撤销用 `revoke_scope_access`，每次工具调用重新检查角色和任务授权，并在审计记录中保存 branch 与 task。`ContextTools` 和 `serve` 仍是受信任本地宿主接口。
 
 > 授权隔离现状：数据分区是四维的（`Scope(tenant, project, branch, task)`），但可选 OIDC 授权层当前只按 tenant + project 判定成员角色，尚未强制 branch/task 级隔离。需要更细粒度隔离的宿主应在自己的授权层补齐。
 

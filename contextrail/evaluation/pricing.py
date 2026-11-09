@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 
 
@@ -16,11 +17,14 @@ class PriceBook:
     cache_write_per_million: float | None = None
 
     def __post_init__(self) -> None:
-        if not self.version.strip() or self.input_per_million < 0 or self.output_per_million < 0:
+        if not self.version.strip() or not all(math.isfinite(rate) and rate >= 0
+                                              for rate in (self.input_per_million, self.output_per_million)):
             raise ValueError("Price sheet requires a version and nonnegative input/output prices.")
-        if self.cached_input_per_million is not None and self.cached_input_per_million < 0:
+        if self.cached_input_per_million is not None and (not math.isfinite(self.cached_input_per_million)
+                                                          or self.cached_input_per_million < 0):
             raise ValueError("Cached-input price must be nonnegative.")
-        if self.cache_write_per_million is not None and self.cache_write_per_million < 0:
+        if self.cache_write_per_million is not None and (not math.isfinite(self.cache_write_per_million)
+                                                         or self.cache_write_per_million < 0):
             raise ValueError("Cache-write price must be nonnegative.")
 
     @classmethod
@@ -42,6 +46,8 @@ class PriceBook:
             if self.cache_write_per_million is not None:
                 raise ValueError("Cache-write usage is required by this price sheet.")
             cache_write_tokens = 0
+        if cache_write_tokens and self.cache_write_per_million is None:
+            raise ValueError("Reported cache writes require a separate price or an explicit zero rate.")
         if min(cached_input_tokens, cache_write_tokens) < 0 or cached_input_tokens > input_tokens:
             raise ValueError("Invalid token accounting for price estimate.")
         cached_rate = self.input_per_million if self.cached_input_per_million is None else self.cached_input_per_million

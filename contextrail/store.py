@@ -148,8 +148,18 @@ CREATE TABLE evidence_index_state (
 );
 """
 APPLICATION_ID = 0x43524C31
-CORE_SCHEMA_VERSION = 10
-SUPPORTED_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+CORE_SCHEMA_VERSION = 11
+SUPPORTED_SCHEMA_VERSIONS = frozenset(range(1, CORE_SCHEMA_VERSION + 1))
+SCHEMA_V11 = """
+ALTER TABLE request_usage ADD COLUMN timestamp REAL;
+ALTER TABLE request_usage ADD COLUMN price_version TEXT;
+ALTER TABLE request_usage ADD COLUMN request_cost REAL;
+ALTER TABLE request_usage ADD COLUMN ttft_ms INTEGER;
+ALTER TABLE request_usage ADD COLUMN tool_calls INTEGER;
+ALTER TABLE request_usage ADD COLUMN retries INTEGER;
+ALTER TABLE request_usage ADD COLUMN error_code TEXT;
+ALTER TABLE request_usage ADD COLUMN strategy TEXT;
+"""
 # Snapshot body schemas this build can read.  v2 adds selection_groups; a body
 # whose schema is not listed here is refused by load_snapshot rather than
 # silently degraded to individual selections.
@@ -182,6 +192,7 @@ class Store:
                     self._apply_schema(SCHEMA_V9)
                     from .accounting import SCHEMA_V10
                     self._apply_schema(SCHEMA_V10)
+                    self._apply_schema(SCHEMA_V11)
                     self.db.execute(f"PRAGMA user_version={CORE_SCHEMA_VERSION}")
                     self.db.execute(f"PRAGMA application_id={APPLICATION_ID}")
                 elif application_id != APPLICATION_ID:
@@ -208,6 +219,8 @@ class Store:
                     if version < 10:
                         from .accounting import SCHEMA_V10
                         self._apply_schema(SCHEMA_V10)
+                    if version < 11:
+                        self._apply_schema(SCHEMA_V11)
                     self.db.execute(f"PRAGMA user_version={CORE_SCHEMA_VERSION}")
                 from .indexing import initialize
                 initialize(self)
@@ -657,15 +670,12 @@ class Store:
         if row is None or row[0] != ref.revision:
             raise StaleSnapshot("Evidence is no longer the current artifact revision.")
 
-    def load_snapshot(self, scope: Scope, sid: str, *, require_current: bool = True) -> dict:
-        task = self._task(scope)
+    def _snapshot_record(self, scope: Scope, sid: str) -> tuple[int, dict]:
         row = self.db.execute("SELECT * FROM snapshots WHERE scope=? AND id=?", (scope.key, sid)).fetchone()
         if row is None:
             raise NotFound("Snapshot not found in this scope.")
         if digest(row["body"].encode("utf-8")) != row["sha256"]:
             raise IntegrityError("Snapshot integrity check failed.")
-        if require_current and task["version"] != row["version"]:
-            raise StaleSnapshot("Task changed since the snapshot was captured.")
         result = json.loads(row["body"])
         # A snapshot carrying group semantics is a v2 body.  Refuse any schema a
         # reader in this build does not understand rather than ignore its extra
@@ -673,6 +683,13 @@ class Store:
         # atomicity.  v1 stays exactly as before.
         if result.get("schema") not in SUPPORTED_SNAPSHOT_SCHEMAS:
             raise IntegrityError("Unsupported snapshot schema version.")
+        return row["version"], result
+
+    def load_snapshot(self, scope: Scope, sid: str, *, require_current: bool = True) -> dict:
+        task = self._task(scope)
+        version, result = self._snapshot_record(scope, sid)
+        if require_current and task["version"] != version:
+            raise StaleSnapshot("Task changed since the snapshot was captured.")
         for selection in result["evidence"]:
             ref = Ref(**selection["ref"])
             if self.get(scope, ref).sha256 != selection["sha256"]:
@@ -734,27 +751,41 @@ class Store:
             self.session(scope, session)
         clause = " AND session=?" if session is not None else ""
         values = (scope.key, session) if session is not None else (scope.key,)
-        aggregate_columns = ("COUNT(*) AS requests, COALESCE(SUM(input_units),0) AS input_units, "
-                             "COALESCE(SUM(cached_input_units),0) AS cached_input_units, "
-                             "COALESCE(SUM(cache_write_units),0) AS cache_write_units, "
-                             "COALESCE(SUM(output_units),0) AS output_units, "
-                             "COALESCE(SUM(latency_ms),0) AS latency_ms")
-        legacy = dict(self.db.execute("SELECT " + aggregate_columns + " FROM usage_records WHERE scope=?" + clause,
-                                      values).fetchone())
-        # Both ledgers must be aggregated. Hosts on the newer request-granular
-        # path write to request_usage; summing only usage_records would silently
-        # report zero. request_usage keeps absent counts NULL (usage unknown), so
-        # COALESCE(...,0) only adds the units a provider actually reported.
-        request = dict(self.db.execute("SELECT " + aggregate_columns + ", "
-                                       "COALESCE(SUM(usage_known),0) AS usage_known_requests "
-                                       "FROM request_usage WHERE scope=?" + clause, values).fetchone())
-        combined = {key: legacy.get(key, 0) + request.get(key, 0)
-                    for key in ("requests", "input_units", "cached_input_units",
-                                "cache_write_units", "output_units", "latency_ms")}
-        combined["aggregate_requests"] = legacy["requests"]
-        combined["request_ledger_requests"] = request["requests"]
-        combined["request_ledger_usage_known"] = request["usage_known_requests"]
-        return combined
+        units = ("input_units", "cached_input_units", "cache_write_units", "output_units")
+        measures = (*units, "latency_ms", "request_cost")
+        columns = ", ".join((*units, "latency_ms"))
+        sums = ", ".join(f"SUM({field}) AS {field}, COUNT({field}) AS n_{field}" for field in measures)
+        rows = self.db.execute(
+            f"""WITH ledger AS (
+                SELECT unit, {columns}, NULL AS request_cost, 1 AS legacy, 0 AS request_known
+                FROM usage_records WHERE scope=?{clause}
+                UNION ALL
+                SELECT unit, {columns}, request_cost, 0, usage_known
+                FROM request_usage WHERE scope=?{clause}
+            ) SELECT unit, COUNT(*) AS requests, SUM(legacy) AS legacy, SUM(request_known) AS request_known,
+                     {sums}
+              FROM ledger GROUP BY unit""", (*values, *values),
+        ).fetchall()
+        by_unit = {}
+        for row in rows:
+            observed = {field: row[field] for field in measures}
+            coverage = {field: row[f"n_{field}"] for field in measures}
+            by_unit[row["unit"]] = {
+                "requests": row["requests"], "observed": observed, "observations": coverage,
+                **{field: observed[field] if coverage[field] == row["requests"] else None for field in measures},
+            }
+        counts = sum(row["requests"] for row in rows)
+        legacy = sum(row["legacy"] for row in rows)
+        totals = {field: (0 if not rows else rows[0][field] if len(rows) == 1
+                          and rows[0][f"n_{field}"] == counts else None) for field in units}
+        for field in ("latency_ms", "request_cost"):
+            totals[field] = (sum(row[field] for row in rows) if rows and
+                             all(row[f"n_{field}"] == row["requests"] for row in rows)
+                             else 0 if not rows else None)
+        return {**totals, "requests": counts, "aggregate_requests": legacy,
+                "request_ledger_requests": counts - legacy,
+                "request_ledger_usage_known": sum(row["request_known"] for row in rows),
+                "by_unit": by_unit}
 
     def add_task_state(self, scope: Scope, lease: Lease, *, kind: str, text: str,
                        sources: tuple[Ref, ...] = (), inferred: bool = False,
@@ -828,43 +859,55 @@ class Store:
                              latency_ms: int | None = None, request_id: str | None = None,
                              run_id: str | None = None, attempt: int = 1,
                              model_revision: str | None = None, request_digest: str | None = None,
-                             observation: dict | None = None) -> RequestUsage:
+                             observation: dict | None = None, timestamp: float | None = None,
+                             price_version: str | None = None, request_cost: float | None = None,
+                             ttft_ms: int | None = None, tool_calls: int | None = None,
+                             retries: int | None = None, error_code: str | None = None,
+                             strategy: str | None = None) -> RequestUsage:
         """Record one provider request without converting absent usage to zero."""
         self._sha256(packet_sha256)
         identifier(snapshot)
         identifier(unit)
         integer(attempt, 1)
-        for value in (input_units, cached_input_units, cache_write_units, output_units, latency_ms):
+        for value in (input_units, cached_input_units, cache_write_units, output_units, latency_ms,
+                      ttft_ms, tool_calls, retries):
             if value is not None:
                 integer(value)
         if input_units is not None and cached_input_units is not None and cached_input_units > input_units:
             raise InvalidRequest("Cached input units cannot exceed total input units.")
-        for value in (request_id, run_id, model_revision):
+        for value in (request_id, run_id, model_revision, price_version, error_code, strategy):
             if value is not None:
                 identifier(value)
         if request_digest is not None:
             self._sha256(request_digest)
+        for value in (timestamp, request_cost):
+            if value is not None and (type(value) not in (int, float) or value < 0
+                                      or value > 1e100 or not math.isfinite(value)):
+                raise InvalidRequest("Request timestamp and USD cost must be finite nonnegative values.")
+        if ttft_ms is not None and latency_ms is not None and ttft_ms > latency_ms:
+            raise InvalidRequest("TTFT cannot exceed completion latency.")
         usage_known = input_units is not None and output_units is not None
         if observation is not None and (not isinstance(observation,dict) or len(canonical(observation).encode())>65536):
             raise InvalidRequest('Request observation metadata exceeds its declared boundary')
         with self.transaction():
             target = self.session(scope, session)
-            # A request already happened; the version may have advanced since the
-            # packet was compiled (a later put/invalidate/task-state/action bumps
-            # it). Recording spent usage must not fail with StaleSnapshot, or the
-            # ledger silently loses cost that was really incurred. Integrity and
-            # evidence-digest checks in load_snapshot still run.
-            self.load_snapshot(scope, snapshot, require_current=False)
+            # Attribute spent usage to the immutable snapshot identity. Evidence
+            # may since have expired, been invalidated or been redacted.
+            self._snapshot_record(scope, snapshot)
             usage_id = uuid.uuid4().hex
             at = self.clock()
             try:
                 self.db.execute(
                     "INSERT INTO request_usage(scope,id,session,provider,model,model_revision,request_id,run_id,"
                     "attempt,packet_sha256,snapshot,unit,input_units,cached_input_units,cache_write_units,"
-                    "output_units,latency_ms,usage_known,at,request_digest,observation_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "output_units,latency_ms,usage_known,at,request_digest,observation_json,timestamp,price_version,"
+                    "request_cost,ttft_ms,tool_calls,retries,error_code,strategy) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (scope.key, usage_id, session, target.provider, target.model, model_revision, request_id,
                      run_id, attempt, packet_sha256, snapshot, unit, input_units, cached_input_units,
-                     cache_write_units, output_units, latency_ms, int(usage_known), at, request_digest,canonical(observation) if observation is not None else None),
+                     cache_write_units, output_units, latency_ms, int(usage_known), at, request_digest,
+                     canonical(observation) if observation is not None else None, timestamp, price_version,
+                     request_cost, ttft_ms, tool_calls, retries, error_code, strategy),
                 )
             except sqlite3.IntegrityError as exc:
                 if observation is not None and observation.get('id') is not None:
@@ -876,7 +919,8 @@ class Store:
                         usage_known=usage_known, packet_sha256=packet_sha256)
         return RequestUsage(usage_id, session, target.provider, target.model, model_revision, request_id,
                             run_id, attempt, packet_sha256, request_digest, snapshot, unit, input_units, cached_input_units,
-                            cache_write_units, output_units, latency_ms, usage_known, at)
+                            cache_write_units, output_units, latency_ms, usage_known, at,
+                            timestamp, price_version, request_cost, ttft_ms, tool_calls, retries, error_code, strategy)
 
     def begin_compaction(self, scope: Scope, lease: Lease, sid: str, *, reason: str) -> Compaction:
         identifier(sid)

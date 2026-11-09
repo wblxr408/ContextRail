@@ -148,7 +148,7 @@ class OidcAccessTokenVerifier:
 
 
 class AuthorizationService:
-    """Tenant/project authorization backed by ContextRail's transactional store.
+    """Role capabilities and exact task grants for the optional OIDC adapter.
 
     Administration methods are intended for a trusted control plane after it has
     authorized its own administrator. Application request paths should call
@@ -170,6 +170,17 @@ class AuthorizationService:
                 for statement in SCHEMA_V2.split(";"):
                     if statement.strip():
                         self.store.db.execute(statement)
+            self.store.db.execute("""
+                CREATE TABLE IF NOT EXISTS scope_access (
+                    scope TEXT NOT NULL REFERENCES tasks(scope),
+                    identity_id TEXT NOT NULL REFERENCES identities(id),
+                    PRIMARY KEY(scope,identity_id)
+                )
+            """)
+            audit_columns = {row["name"] for row in self.store.db.execute("PRAGMA table_info(authorization_events)")}
+            for column in ("branch", "task"):
+                if column not in audit_columns:
+                    self.store.db.execute(f"ALTER TABLE authorization_events ADD COLUMN {column} TEXT")
 
     def register_identity(self, principal: Principal) -> str:
         with self.store.transaction():
@@ -223,6 +234,19 @@ class AuthorizationService:
             self.store.db.execute("DELETE FROM project_memberships WHERE tenant_id=? AND project_id=? AND identity_id=?",
                                   (tenant_id, project_id, identity_id))
 
+    def grant_scope_access(self, principal: Principal, scope: Scope) -> None:
+        """Bind a provisioned identity to an existing tenant/project/branch/task."""
+        with self.store.transaction():
+            identity_id = self._identity_id(principal)
+            self.store.task(scope)
+            self.store.db.execute("INSERT INTO scope_access(scope,identity_id) VALUES(?,?) ON CONFLICT DO NOTHING",
+                                  (scope.key, identity_id))
+
+    def revoke_scope_access(self, principal: Principal, scope: Scope) -> None:
+        with self.store.transaction():
+            identity_id = self._identity_id(principal)
+            self.store.db.execute("DELETE FROM scope_access WHERE scope=? AND identity_id=?", (scope.key, identity_id))
+
     def require(self, principal: Principal, scope: Scope, action: str) -> None:
         if action not in KNOWN_ACTIONS:
             raise InvalidRequest("Unknown authorization action.")
@@ -239,9 +263,11 @@ class AuthorizationService:
                 row = self.store.db.execute("SELECT role FROM project_memberships WHERE tenant_id=? AND project_id=? AND identity_id=?",
                                             (scope.tenant, scope.project, identity_id)).fetchone()
                 project_role = row["role"] if row else None
-            allowed = project is not None and self._allowed(tenant_role, project_role, action)
-            self.store.db.execute("INSERT INTO authorization_events(principal_digest,tenant_id,project_id,action,decision,at) VALUES(?,?,?,?,?,?)",
-                                  (principal.digest, scope.tenant, scope.project, action,
+            grant = self.store.db.execute("SELECT 1 FROM scope_access WHERE scope=? AND identity_id=?",
+                                          (scope.key, identity_id)).fetchone()
+            allowed = project is not None and grant is not None and self._allowed(tenant_role, project_role, action)
+            self.store.db.execute("INSERT INTO authorization_events(principal_digest,tenant_id,project_id,branch,task,action,decision,at) VALUES(?,?,?,?,?,?,?,?)",
+                                  (principal.digest, scope.tenant, scope.project, scope.branch, scope.task, action,
                                    "allow" if allowed else "deny", self.store.clock()))
         # Raise after committing the decision record: denial audit must not vanish
         # merely because the request receives an AccessDenied response.
@@ -250,7 +276,8 @@ class AuthorizationService:
 
     def audit_events(self) -> list[dict]:
         return [dict(row) for row in self.store.db.execute(
-            "SELECT sequence,principal_digest,tenant_id,project_id,action,decision,at FROM authorization_events ORDER BY sequence")]
+            "SELECT sequence,principal_digest,tenant_id,project_id,branch,task,action,decision,at "
+            "FROM authorization_events ORDER BY sequence")]
 
     def _identity_id(self, principal: Principal, *, deny_if_missing: bool = True) -> str | None:
         row = self.store.db.execute("SELECT id FROM identities WHERE issuer=? AND subject=?",

@@ -66,7 +66,12 @@ class UsageLedger:
                        cache_write_units: int | None = None, output_units: int | None = None,
                        latency_ms: int | None = None, request_id: str | None = None,
                        run_id: str | None = None, attempt: int = 1,
-                       model_revision: str | None = None, request_digest: str | None = None, observation: dict | None = None):
+                       model_revision: str | None = None, request_digest: str | None = None,
+                       observation: dict | None = None, timestamp: float | None = None,
+                       price_version: str | None = None, request_cost: float | None = None,
+                       ttft_ms: int | None = None, tool_calls: int | None = None,
+                       retries: int | None = None, error_code: str | None = None,
+                       strategy: str | None = None):
         """Persist a request-granular observation, preserving missing usage."""
         if not isinstance(packet, Packet):
             raise InvalidRequest("Usage must be associated with a compiled packet.")
@@ -81,6 +86,8 @@ class UsageLedger:
             cache_write_units=cache_write_units, output_units=output_units, latency_ms=latency_ms,
             request_id=request_id, run_id=run_id, attempt=attempt, model_revision=model_revision,
             request_digest=request_digest, observation=observation,
+            timestamp=timestamp, price_version=price_version, request_cost=request_cost,
+            ttft_ms=ttft_ms, tool_calls=tool_calls, retries=retries, error_code=error_code, strategy=strategy,
         )
 
 
