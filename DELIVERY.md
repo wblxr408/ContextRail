@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 62/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 63/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -85,3 +85,11 @@ Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文
 Windows 本地 4 项集中验收和 wheel 构建通过。临时原生事件库覆盖来源隔离、桌面代码工具的明确退出状态、候选分页、幂等否决和证据变化。只读抽查原库四个会话的近期捕获及三个时间窗口，识别到有明确结果的操作，窗口内未发现满足跨会话重复条件的候选。见 [跨会话经验审阅](QUERY_USE.md#跨会话经验审阅)。
 
 交付分支 `codex/cross-session-experience`。
+
+## 第十四模块 G07
+
+从 H03 实际回读的字节窗口计算热度，支持可选目录排序和显式预取。保留既有优先级，依赖组整体装载。整理建议保护必读项、现行任务来源、依赖组和 Bridge 权威原件。
+
+Windows 本地 6 项集中验收和 wheel 构建通过。实际 MCP stdio 回读在断开后驱动 CLI 同预算预取。用例覆盖未送达的批量结果、精确 revision 与字节窗口、低热度建议、必读保护和共享依赖组。独立 Basic Memory 读操作没有 Rail 回执，仍在此观测范围之外。见 [按回读热度预取](ACCOUNTING_USE.md#按实际回读热度预取可选材料)。
+
+交付分支 `codex/read-heat-prefetch`。

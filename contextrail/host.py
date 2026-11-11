@@ -171,12 +171,23 @@ class ContextTools:
             refs = self.store.search(self.scope, **arguments)
             return {"refs": [asdict(r) for r in refs], "match": "literal_substring", "range_unit": "bytes"}
         if name == "context.list":
-            self._keys(arguments, required={"snapshot"}, optional={"offset", "limit"})
+            self._keys(arguments, required={"snapshot"}, optional={"offset", "limit", "prefer_frequent_reads"})
             entries, total = self.store.snapshot_refs(self.scope, arguments["snapshot"],
                                                       offset=arguments.get("offset", 0),
-                                                      limit=arguments.get("limit", 20))
+                                                      limit=arguments.get("limit", 20),
+                                                      prefer_frequent_reads=arguments.get("prefer_frequent_reads", False))
             return {"snapshot": arguments["snapshot"], "entries": entries, "total": total,
                     "offset": arguments.get("offset", 0), "range_unit": "bytes"}
+        if name == "context.read_heat":
+            from .read_heat import read_heat
+            self._keys(arguments, required={"snapshot"}, optional={"offset", "limit", "budget"})
+            budget = arguments.get("budget", min(8192, self.max_read_bytes))
+            integer(budget, 1)
+            if budget > self.max_read_bytes:
+                raise InvalidRequest("Read heat budget exceeds the bound response limit.")
+            return read_heat(self.store, self.scope, arguments["snapshot"],
+                             offset=arguments.get("offset", 0), limit=arguments.get("limit", 20),
+                             budget=budget)
         if name == "context.summary_search":
             self._keys(arguments, required={"query"}, optional={"limit"})
             summaries = self.store.search_summaries(self.scope, **arguments)
@@ -313,7 +324,15 @@ class ContextTools:
              "input_schema": {"type": "object", "properties": {
                  "snapshot": {"type": "string", "minLength": 1},
                  "offset": {"type": "integer", "minimum": 0},
-                 "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                 "prefer_frequent_reads": {"type": "boolean"}},
+                 "required": ["snapshot"], "additionalProperties": False}},
+            {"name": "context.read_heat", "description": "Inspect observed read heat and non-destructive review suggestions for a current snapshot.",
+             "input_schema": {"type": "object", "properties": {
+                 "snapshot": {"type": "string", "minLength": 1},
+                 "offset": {"type": "integer", "minimum": 0},
+                 "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                 "budget": {"type": "integer", "minimum": 1}},
                  "required": ["snapshot"], "additionalProperties": False}},
             {"name": "context.summary_search", "description": "Find derived summaries and their exact evidence spans.",
              "input_schema": {"type": "object", "properties": {

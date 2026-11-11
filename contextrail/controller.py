@@ -93,7 +93,7 @@ class ContextController:
         # still-active root is retained without special-casing.
         self._recovery_roots: set[Ref] = set()
 
-    def compile(self, phase: str) -> TurnContext:
+    def compile(self, phase: str, *, prefer_frequent_reads: bool = False) -> TurnContext:
         if phase not in _PHASES:
             raise InvalidRequest("Unsupported task phase.")
         requested = tuple(sorted(self._requested, key=lambda ref: (ref.name, ref.revision, ref.start,
@@ -103,7 +103,8 @@ class ContextController:
         try:
             packet = self.compiler.compile(self.scope, self.snapshot, self.session,
                                            budget=self.budget.compiler_budget, requested=requested,
-                                           layout=layout, index=self.index)
+                                           layout=layout, index=self.index,
+                                           prefer_frequent_reads=prefer_frequent_reads)
         except BudgetExceeded as exc:
             raise BudgetExceeded("Required task state or recovered evidence cannot fit the final request budget.") from exc
         return TurnContext(phase, packet, requested, len(self._recoveries))

@@ -16,7 +16,7 @@ class TaskNavigation:
         self.store, self.config, self.scope, self.session = store, config, config.scope, session
         store.session(self.scope, session)
 
-    def _resume(self, sid, *, budget=None):
+    def _resume(self, sid, *, budget=None, prefer_frequent_reads=False):
         argv = [sys.executable, "-m", "contextrail", "continue", "--workspace", str(self.config.workspace),
                 "--store", str(self.config.store), "--project-id", self.scope.project, "--tenant", self.scope.tenant, "--task", self.scope.task,
                 "--session", self.session, "--snapshot", sid]
@@ -26,6 +26,8 @@ class TaskNavigation:
             argv += ["--defaults", str(self.config.defaults)]
         if budget is not None:
             argv += ["--budget", str(budget)]
+        if prefer_frequent_reads:
+            argv.append("--prefer-frequent-reads")
         return {"argv": argv, "powershell": "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in argv)}
 
     def _source(self, sid):
@@ -81,13 +83,17 @@ class TaskNavigation:
         result = ContextTools(self.store, self.scope, self.session).call("context.search", {"query": query, "limit": limit})
         return {**result, "source_current": "not_checked", "historical_exports_may_match": True}
 
-    def resume(self, sid, *, budget=8192):
+    def resume(self, sid, *, budget=8192, prefer_frequent_reads=False):
         # Continue never chooses another cursor, creates a chat or acquires a lease.
         source = self._source(sid)
         if source["kind"] == "bridge":
-            result = BridgeEvidence(self.store, self.scope, self.session).packet(sid, budget=budget)
+            result = BridgeEvidence(self.store, self.scope, self.session).packet(
+                sid, budget=budget, prefer_frequent_reads=prefer_frequent_reads)
         else:
-            packet = Compiler(self.store).compile(self.scope, sid, self.session, budget=budget, index=IndexPolicy(max_entries=5))
+            packet = Compiler(self.store).compile(
+                self.scope, sid, self.session, budget=budget, index=IndexPolicy(max_entries=5),
+                prefer_frequent_reads=prefer_frequent_reads)
             result = {"snapshot": sid, "context": json.loads(packet.body), "units": packet.units,
                       "unit": packet.unit, "budget": packet.budget}
-        return {**result, "resume": self._resume(sid, budget=budget)}
+        return {**result, "resume": self._resume(sid, budget=budget,
+                                               prefer_frequent_reads=prefer_frequent_reads)}

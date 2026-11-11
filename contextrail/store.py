@@ -681,19 +681,28 @@ class Store:
                 self._check_head(scope, ref)
         return result
 
-    def snapshot_refs(self, scope: Scope, sid: str, *, offset: int = 0, limit: int = 20) -> tuple[list[dict], int]:
+    def snapshot_refs(self, scope: Scope, sid: str, *, offset: int = 0, limit: int = 20,
+                      prefer_frequent_reads: bool = False) -> tuple[list[dict], int]:
         """Page snapshot-bound cold metadata without releasing evidence bytes."""
         integer(offset)
         integer(limit, 1)
         if limit > 100:
             raise InvalidRequest("Snapshot index page size exceeds 100.")
+        if type(prefer_frequent_reads) is not bool:
+            raise InvalidRequest("Read heat ordering requires a boolean.")
         state = self.load_snapshot(scope, sid)
         # Required evidence is already in every compiled packet. The index is
         # for optional/cold candidates only, preventing a page tool from
         # reintroducing mandatory material as navigation noise.
         entries = [entry for entry in state["evidence"] if not entry["required"]]
-        entries.sort(key=lambda e: (not e.get("cache_stable", False), not e["required"],
-                                    -e["priority"], canonical(e["ref"])))
+        if prefer_frequent_reads:
+            from .read_heat import ReadHeat, required_group_refs
+            required = required_group_refs(state)
+            entries = [entry for entry in entries if Ref(**entry["ref"]) not in required]
+            entries.sort(key=ReadHeat(self, scope).entry_key)
+        else:
+            entries.sort(key=lambda e: (not e.get("cache_stable", False), not e["required"],
+                                        -e["priority"], canonical(e["ref"])))
         return entries[offset:offset + limit], len(entries)
 
     @staticmethod

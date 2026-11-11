@@ -42,13 +42,22 @@ def trace(store,scope,snapshot,offset,limit):
             'last_prepared':prepared,'continue_trace':{'tool':'context.explain','arguments':{'snapshot':snapshot,'trace_offset':offset+limit,'trace_limit':limit}}}
 
 
-def compile_brief(compiler,scope,snapshot,session,*,budget,requested=(),offset=0,limit=20,trace_offset=0,trace_limit=5):
+def compile_brief(compiler,scope,snapshot,session,*,budget,requested=(),offset=0,limit=20,trace_offset=0,trace_limit=5,
+                  prefer_frequent_reads=False):
     integer(budget,1);integer(offset);integer(limit,1);integer(trace_offset);integer(trace_limit,1)
     if limit>100 or trace_limit>20 or offset>1000000 or trace_offset>1000000:raise InvalidRequest('Brief page limits exceeded')
     if not isinstance(requested,(tuple,list)) or any(not isinstance(r,Ref) for r in requested) or len(set(requested))!=len(requested):raise InvalidRequest('Requested pages must be unique exact refs')
+    if type(prefer_frequent_reads) is not bool:
+        raise InvalidRequest("Read heat prefetch requires a boolean.")
     store=compiler.store;target=store.session(scope,session);state=store.load_snapshot(scope,snapshot)
     entries=state.pop('evidence');groups=state.pop('selection_groups',[])
-    entries.sort(key=lambda e:(not e['required'],-e['priority'],canonical(e['ref'])))
+    if prefer_frequent_reads:
+        from .read_heat import ReadHeat
+        heat = ReadHeat(store, scope)
+        pinned = set(requested)
+        entries.sort(key=lambda entry: heat.entry_key(entry, pinned))
+    else:
+        entries.sort(key=lambda e:(not e['required'],-e['priority'],canonical(e['ref'])))
     refs=[Ref(**e['ref']) for e in entries];by_ref=dict(zip(refs,entries))
     if any(r not in by_ref for r in requested):raise AccessDenied('Requested evidence is outside this exact snapshot')
     # Union all overlapping groups before promotion; components own L2 atomicity.

@@ -60,3 +60,20 @@ context.metrics读取query binding限定的workspace/精确会话最新200份报
 宿主可显式使用`CompactionLifecycle.begin_if_efficient(scope, lease, snapshot, proposal)`：未知或非正收益返回kept_current、无compaction记录；正收益只准备原有生命周期，仍不调用模型。`CacheLayoutPolicy.compile_if_efficient(..., proposal=...)`依建议选择原layout或当前普通包，provider_cache_hit保持unknown。二者是主机SDK接线；MCP的efficiency始终只读，原手动begin仍是主机明确操作。
 
 当前阶段契约tests/test_request_accounting_stage.py；结果见openspec/changes/observed-request-accounting/verification.md。
+
+## 按实际回读热度预取可选材料
+
+在同一任务下，先用 `context.get` 回读所需原文。MCP、JSON-lines `serve`、CLI `batch-read` 和显式使用 `HostAccounting.call_tool` 的 SDK 宿主会记录实际返回的窗口。批量响应只计完整返回的原文，同一批对一个窗口只贡献一次观测。预览、编译、失败读取和仅在批量内部加载后被省略的内容不增加热度。
+
+```powershell
+contextrail read-heat --workspace D:/ContextRail --task my-task --session owner --snapshot <snapshot>
+contextrail continue --workspace D:/ContextRail --task my-task --session owner --snapshot <snapshot> --budget 8192 --prefer-frequent-reads
+```
+
+MCP 用 `context.read_heat` 查看现行快照的热度和建议。用 `context.list` 的 `prefer_frequent_reads: true` 查看排序后的可选目录。Bridge 包可用 `bridge-packet --prefer-frequent-reads` 或 MCP `context.packet` 的同名布尔参数。自管 SDK 可为 `Compiler.compile` 或 `ContextController.compile` 显式开启。
+
+热度只匹配同任务、同 revision、字节范围相交的成功回读。最近 90 天最多使用 2000 条回执，每条按 7 天半衰期折算。没有观测时显示 `unobserved`。显式优先级先于热度，同优先级的可选材料按热度排序。共享成员的依赖组按一个单元装载。超出预算时，原文继续由 `context.get` 精确回读。
+
+低热度建议供人工复核。至少有一次可见的回读且最近一次距今已满 21 天，才可能建议降级或合并。回执达到扫描上限时保留覆盖提示并暂停此类建议。必读材料、现行任务条目的来源、依赖组成员和 Bridge 导出的权威原件有保护原因。该入口不执行整理，原有过期、失效和删除规则继续各自生效。
+
+这个视图使用 Rail 保存的任务材料和宿主回执。独立 Basic Memory 阅读以及是否进入模型的最终输入仍是未知。半衰期思路参考了 [ai-memory 的保留公式](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/crates/ai-memory-store/src/decay.rs)。

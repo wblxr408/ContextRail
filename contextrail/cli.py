@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import tempfile
 from typing import TextIO
+from uuid import uuid4
 
 from .context import Compiler
 from .errors import InvalidRequest, RailError
@@ -24,10 +25,13 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history",
-                    "experience-review", "experience-reject")
+                    "experience-review", "experience-reject", "read-heat")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
+    from .accounting import HostAccounting
+    meter = HostAccounting(tools.store, tools.scope, tools.session_id)
+    generation = uuid4().hex
     while True:
         line = source.readline(max_request_chars + 1)
         if not line:
@@ -49,7 +53,11 @@ def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_char
             if isinstance(request["id"], str):
                 unicode_text(request["id"])
             request_id = request["id"]
-            result = tools.call(request["tool"], request["arguments"])
+            if request["tool"] in ("context.get", "context.batch"):
+                observation = f"jsonl-{generation}-{type(request_id).__name__}-{request_id}"
+                result = meter.call_tool(tools, request["tool"], request["arguments"], observation_id=observation)
+            else:
+                result = tools.call(request["tool"], request["arguments"])
             response = {"id": request_id, "result": result}
         except RailError as exc:
             response = {"id": request_id, "error": {"code": exc.code, "message": str(exc)}}
@@ -154,6 +162,10 @@ def parser() -> argparse.ArgumentParser:
         elif command=='metrics':
             sub.add_argument('--offset',type=int,default=0)
             sub.add_argument('--limit',type=int,default=20)
+        elif command == "read-heat":
+            sub.add_argument("--snapshot", required=True)
+            sub.add_argument("--offset", type=int, default=0)
+            sub.add_argument("--limit", type=int, default=20)
         elif command in {'efficiency','record-request'}:
             sub.add_argument('--input',type=Path,help='Explicit host receipt/proposal JSON; omit to read stdin')
             if command=='record-request':
@@ -233,6 +245,7 @@ def parser() -> argparse.ArgumentParser:
                 sub.add_argument("--snapshot", required=True, help="Exact Rail snapshot returned by bridge-import")
                 if command == "bridge-packet":
                     sub.add_argument("--budget", type=int)
+                    sub.add_argument("--prefer-frequent-reads", action="store_true")
                 else:
                     sub.add_argument("--receipt", type=Path, required=True)
         elif command in ('recover','resume-bind','resume-offer','resume-accept','resume-abort','intent-project'):
@@ -284,6 +297,8 @@ def parser() -> argparse.ArgumentParser:
         elif command in ("continue", "explain", "brief"):
             sub.add_argument("--snapshot", required=True)
             sub.add_argument("--budget", type=int)
+            if command == "continue":
+                sub.add_argument("--prefer-frequent-reads", action="store_true")
             if command in ('brief','explain'):
                 sub.add_argument('--offset',type=int,default=0)
                 sub.add_argument('--limit',type=int,default=20)
@@ -546,7 +561,13 @@ def project_command(args):
                     "query": args.query, "limit": args.limit, "offset": args.offset, "budget": config.response_bytes,
                     "context_chars": args.context_chars, "window_limit": args.window_limit})
             print(canonical(output))
+        elif args.command == "read-heat":
+            tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes)
+            print(canonical(tools.call("context.read_heat", {
+                "snapshot": args.snapshot, "offset": args.offset, "limit": args.limit,
+                "budget": min(config.read_bytes, config.response_bytes)})))
         elif args.command == "batch-read":
+            from .accounting import HostAccounting
             try:
                 with (open(args.calls, "rb") if args.calls != "-" else __import__("contextlib").nullcontext(sys.stdin.buffer)) as stream:
                     raw = stream.read(131073)
@@ -556,7 +577,9 @@ def project_command(args):
             except (ValueError, RecursionError):
                 raise InvalidRequest("Batch calls must be a JSON array.") from None
             tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes)
-            print(canonical(tools.call("context.batch", {"calls": calls, "concurrency": args.concurrency,
+            meter = HostAccounting(store, config.scope, args.session)
+            print(canonical(meter.call_tool(tools, "context.batch", {
+                "calls": calls, "concurrency": args.concurrency,
                 "per_call_bytes": args.per_call_bytes, "budget": config.response_bytes})))
         elif args.command == "extract-result":
             try:
@@ -592,7 +615,8 @@ def project_command(args):
             if args.command == "bridge-import":
                 output = bridge.import_bundle(args.bundle, args.bridge_scope, Lease(args.session, args.epoch))
             elif args.command == "bridge-packet":
-                output = bridge.packet(args.snapshot, budget=packet_budget)
+                output = bridge.packet(args.snapshot, budget=packet_budget,
+                                       prefer_frequent_reads=args.prefer_frequent_reads)
             else:
                 output = bridge.receipt(args.snapshot, args.receipt)
             print(canonical(output))
@@ -686,7 +710,8 @@ def project_command(args):
             elif args.command == "search":
                 output = navigation.search(args.query, limit=args.limit)
             else:
-                output = navigation.resume(args.snapshot, budget=packet_budget)
+                output = navigation.resume(args.snapshot, budget=packet_budget,
+                                           prefer_frequent_reads=args.prefer_frequent_reads)
             print(canonical(output))
         else:
             import asyncio

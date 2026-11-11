@@ -294,7 +294,7 @@ class BridgeEvidence:
             raise StaleSnapshot("Bridge source changed; re-import before compiling current requirements.")
         return manifest, saved, ref
 
-    def packet(self, sid, *, budget=8192, layered=False, intent_details=True):
+    def packet(self, sid, *, budget=8192, layered=False, intent_details=True, prefer_frequent_reads=False):
         # One consistent SQLite view prevents an intervening publication from
         # changing the origin pointer between freshness validation and compile.
         with self.store.read_transaction():
@@ -305,10 +305,12 @@ class BridgeEvidence:
                 try:
                     if layered:
                         from .layered import compile_brief
-                        packet=compile_brief(Compiler(self.store),self.scope,sid,self.session,budget=working_budget)
+                        packet=compile_brief(Compiler(self.store),self.scope,sid,self.session,
+                                             budget=working_budget, prefer_frequent_reads=prefer_frequent_reads)
                     else:
                         packet=Compiler(self.store)._compile(self.scope,sid,self.session,budget=working_budget,
-                            requested=(),layout=None,index=IndexPolicy(max_entries=5 if intent_details else 1))
+                            requested=(),layout=None,index=IndexPolicy(max_entries=5 if intent_details else 1),
+                            prefer_frequent_reads=prefer_frequent_reads)
                 except BudgetExceeded:
                     raise BudgetExceeded("Required Bridge IDs " + ", ".join(manifest["required_ids"]) +
                                          " and task/navigation do not fit; increase the context byte budget.") from None

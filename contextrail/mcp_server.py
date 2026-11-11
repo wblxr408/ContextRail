@@ -31,7 +31,8 @@ async def run_stdio(tools: ContextTools):
             "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}}]
         definitions.append({"name": "context.packet", "description": "Read a source-checked Bridge task packet at an exact snapshot. No refresh or write access.",
             "input_schema": {"type": "object", "properties": {"snapshot": {"type": "string", "minLength": 1},
-                "budget": {"type": "integer", "minimum": 1, "maximum": tools.max_read_bytes}},
+                "budget": {"type": "integer", "minimum": 1, "maximum": tools.max_read_bytes},
+                "prefer_frequent_reads": {"type": "boolean"}},
                 "required": ["snapshot"], "additionalProperties": False}})
         result=[]
         for item in definitions:
@@ -54,13 +55,15 @@ async def run_stdio(tools: ContextTools):
                 if name=='context.packet':
                     from .bridge import BridgeEvidence
                     from .models import integer
-                    tools._keys(arguments,required={'snapshot'},optional={'budget'})
+                    tools._keys(arguments,required={'snapshot'},optional={'budget','prefer_frequent_reads'})
                     budget=arguments.get('budget',default_packet_budget);integer(budget,1)
                     if budget>tools.max_read_bytes:raise InvalidRequest('Packet context budget exceeds the bound reader limit.')
-                    return BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(arguments['snapshot'],budget=budget)
+                    return BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(
+                        arguments['snapshot'], budget=budget,
+                        prefer_frequent_reads=arguments.get('prefer_frequent_reads', False))
                 return tools.call(name,arguments)
             from .accounting import HostAccounting
-            if name not in {'context.metrics','context.efficiency'}:
+            if name not in {'context.metrics','context.efficiency','context.read_heat'}:
                 result=HostAccounting(tools.store,tools.scope,tools.session_id).call_tool(tools,name,arguments,
                     observation_id='mcp-'+generation+'-'+str(request_id),invoke=invoke)
             else:result=invoke()

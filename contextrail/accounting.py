@@ -126,19 +126,40 @@ class HostAccounting:
             status='failed';code=exc.code if isinstance(exc,RailError) else 'tool_failed';raise
         finally:
             returned=len(canonical(result).encode()) if result is not None else None
-            readback=None
-            if status=='succeeded' and name=='context.get' and isinstance(result,dict):
-                try:readback=len(base64.b64decode(result['content'])) if result.get('encoding')=='base64' else len(result['content'].encode('utf-8'))
-                except (KeyError,TypeError,ValueError):pass
+            readback = readback_bytes(result) if status == 'succeeded' and name == 'context.get' else None
             value={'measurement_id':self.session+':'+observation_id,'id':observation_id,'session':self.session,'tool':name,
                    'request_observation_id':request_observation_id,'status':status,'error_code':code,
                    'returned_bytes':returned,'readback_bytes':readback,'latency_ms':max(0,int((time.perf_counter()-started)*1000)),
                    'byte_boundary':'application_result_json_not_transport_wire_or_model_input',
                    'ref':result.get('ref') if isinstance(result,dict) and name=='context.get' else None}
+            if status == 'succeeded' and name == 'context.batch' and isinstance(result, dict):
+                delivered = []
+                for entry in result.get('results', ()):
+                    if (entry.get('tool') == 'context.get' and entry.get('status') == 'succeeded'
+                            and entry.get('delivery') == 'full'):
+                        item = entry.get('result')
+                        size = readback_bytes(item)
+                        if size and isinstance(item.get('ref'), dict):
+                            delivered.append({'ref': item['ref'], 'readback_bytes': size})
+                value['delivered_reads'] = delivered
             if existing is None:
                 try:save_tool(self.store,self.scope,value)
                 except (sqlite3.Error,RailError,OSError):
                     tools._accounting_errors=(getattr(tools,'_accounting_errors',[])+[{'tool':name,'reason':'measurement_not_persisted'}])[-10:]
+
+
+def readback_bytes(result):
+    if not isinstance(result, dict) or not isinstance(result.get('content'), str):
+        return None
+    content = result['content']
+    try:
+        if result.get('encoding') == 'base64':
+            return len(base64.b64decode(content, validate=True))
+        if result.get('encoding') == 'utf-8':
+            return len(content.encode('utf-8'))
+    except (UnicodeError, ValueError):
+        return None
+    return None
 
 
 def save_tool(store,scope,value):

@@ -32,7 +32,7 @@ class Compiler:
 
     def compile(self, scope: Scope, snapshot: str, session: str, *, budget: int,
                 requested: tuple[Ref, ...] = (), layout: CacheLayout | None = None,
-                index: IndexPolicy | None = None) -> Packet:
+                index: IndexPolicy | None = None, prefer_frequent_reads: bool = False) -> Packet:
         """Requested pages are mandatory for this view, without mutating the snapshot.
 
         The budget covers the entire rendered JSON body, including the cold index.
@@ -40,16 +40,18 @@ class Compiler:
         """
         with self.store.read_transaction():
             return self._compile(scope, snapshot, session, budget=budget, requested=requested,
-                                 layout=layout, index=index)
+                                 layout=layout, index=index, prefer_frequent_reads=prefer_frequent_reads)
 
     def _compile(self, scope: Scope, snapshot: str, session: str, *, budget: int,
                  requested: tuple[Ref, ...], layout: CacheLayout | None,
-                 index: IndexPolicy | None) -> Packet:
+                 index: IndexPolicy | None, prefer_frequent_reads: bool = False) -> Packet:
         integer(budget, 1)
         if layout is not None and not isinstance(layout, CacheLayout):
             raise InvalidRequest("Cache layout must be a CacheLayout value.")
         if index is not None and not isinstance(index, IndexPolicy):
             raise InvalidRequest("Cold index policy must be an IndexPolicy value.")
+        if type(prefer_frequent_reads) is not bool:
+            raise InvalidRequest("Read heat prefetch requires a boolean.")
         reserve = layout.reserve if layout is not None else 0
         if reserve >= budget:
             raise BudgetExceeded("Configured output, tool and history reserves leave no context budget.")
@@ -65,15 +67,22 @@ class Compiler:
         # Stable evidence must be required (validated by Selection) and stays at
         # the beginning of the packet. Dynamic task data and cold navigation are
         # rendered afterwards, preserving a provider-cache-friendly prefix.
-        entries.sort(key=lambda e: (not e.get("cache_stable", False), not e["required"],
-                                    -e["priority"], canonical(e["ref"])))
+        heat = None
+        if prefer_frequent_reads:
+            from .read_heat import ReadHeat
+            heat = ReadHeat(self.store, scope)
+            pinned = set(requested)
+            entries.sort(key=lambda entry: heat.entry_key(entry, pinned))
+        else:
+            entries.sort(key=lambda e: (not e.get("cache_stable", False), not e["required"],
+                                        -e["priority"], canonical(e["ref"])))
         refs = {Ref(**e["ref"]) for e in entries}
         if any(r not in refs for r in requested):
             raise AccessDenied("Requested evidence is outside this snapshot.")
         if groups:
             return self._compile_grouped(scope, snapshot, target, state, entries, groups,
                                          requested=requested, budget=budget, context_budget=context_budget,
-                                         layout=layout, index=index, reserve=reserve)
+                                         layout=layout, index=index, reserve=reserve, heat=heat)
         forced = set(requested)
         selected: list[dict] = []
         omitted: list[dict] = []
@@ -165,7 +174,7 @@ class Compiler:
 
     def _compile_grouped(self, scope: Scope, snapshot: str, target, state: dict, entries: list[dict],
                          groups: list[dict], *, requested: tuple[Ref, ...], budget: int, context_budget: int,
-                         layout: CacheLayout | None, index: IndexPolicy | None, reserve: int) -> Packet:
+                         layout: CacheLayout | None, index: IndexPolicy | None, reserve: int, heat=None) -> Packet:
         """Compile a snapshot with atomic group semantics.
 
         A required group loads every member or fails (never partial); a
@@ -177,6 +186,10 @@ class Compiler:
         by_ref = {Ref(**entry["ref"]): entry for entry in entries}
         parsed = [(group, tuple(Ref(**ref) for ref in group["members"])) for group in groups]
         forced = set(requested)
+        if heat is not None:
+            from .read_heat import group_components
+            parsed = group_components(parsed)
+            forced.update(ref for ref, entry in by_ref.items() if entry["required"])
         # A requested ref pins every group that contains it: recovering one
         # member must bring its whole dependency closure, not an isolated span.
         forced_group_ids = {group["id"] for group, members in parsed if forced & set(members)}
@@ -220,6 +233,14 @@ class Compiler:
                     loaded_refs.add(ref)
             else:
                 omitted.append(entry)
+        # Reserve the cold references before evaluating any optional group.
+        # Their navigation bytes also count toward the final packet.
+        for _, members in parsed:
+            for ref in members:
+                if ref not in loaded_refs and by_ref[ref] not in omitted:
+                    omitted.append(by_ref[ref])
+        if heat is not None:
+            omitted.sort(key=heat.entry_key)
 
         def render() -> str:
             return self._render(scope, snapshot, target, state, selected, omitted, layout, index)
@@ -229,8 +250,18 @@ class Compiler:
             raise BudgetExceeded("Mandatory groups and navigation exceed the context budget; no group was split.")
 
         # 2. Optional groups, highest priority first, load whole or not at all.
-        optional_groups = sorted((item for item in parsed if not is_required(item[0])),
-                                 key=lambda item: (-item[0].get("priority", 0), item[0]["id"]))
+        def group_key(item):
+            group, members = item
+            score = max(heat.for_ref(ref)[2] for ref in members) if heat is not None else 0
+            return -group.get("priority", 0), -score, group["id"]
+
+        optional_groups = sorted((item for item in parsed if not is_required(item[0])), key=group_key)
+        if heat is not None:
+            optional_groups.extend(
+                ({"id": canonical(entry["ref"]), "priority": entry["priority"]}, (ref,))
+                for entry in ungrouped if (ref := Ref(**entry["ref"])) not in loaded_refs
+            )
+            optional_groups.sort(key=group_key)
         for group, members in optional_groups:
             new_members = [ref for ref in members if ref not in loaded_refs]
             snapshot_selected = list(selected)
@@ -253,11 +284,6 @@ class Compiler:
                 # Reject the whole group atomically; restore prior selection.
                 selected[:] = snapshot_selected
                 omitted[:] = snapshot_omitted
-        # Any grouped ref that never loaded is a cold, recoverable candidate.
-        for group, members in parsed:
-            for ref in members:
-                if ref not in loaded_refs and by_ref[ref] not in omitted:
-                    omitted.append(by_ref[ref])
         body = render()
 
         # 3. Completeness gate: every included group must be whole.  A member
