@@ -159,7 +159,7 @@ class BridgeEvidence:
                 return event["snapshot"]
         raise NotFound("Bridge publication was not committed.")
 
-    def import_bundle(self, root, bridge_scope, lease: Lease):
+    def import_bundle(self, root, bridge_scope, lease: Lease, *, portable=None):
         identifier(bridge_scope)
         if lease.session != self.session:
             raise AccessDenied("Export lease must belong to the bound session.")
@@ -197,7 +197,8 @@ class BridgeEvidence:
         if existing:
             old = self._manifest(existing)
             frozen = self._bundle(old)
-            if frozen.raw != bundle.raw or frozen.sources != bundle.sources or frozen.root != bundle.root:
+            if (frozen.raw != bundle.raw or frozen.sources != bundle.sources or frozen.root != bundle.root
+                    or (old.get("portable") or {}).get("archive_id") != (portable or {}).get("archive_id")):
                 raise Conflict("Bridge checkpoint identity was reused with different evidence.")
             sid = self._publication(existing)
             return self._describe(old, existing, sid)
@@ -243,6 +244,15 @@ class BridgeEvidence:
                     "sources": sources, "requirements": requirements, "required_ids": sorted(required_ids),
                     "base_requirements": baseline,
                     "deferred_count": sum(row['status']=='active' for row in rows)-len(active)}
+        if portable is not None:
+            materials = []
+            for index, (source, content) in enumerate(portable["materials"]):
+                ref = artifact(prefix + "/portable/evidence/" + str(index), content, media=source["media_type"])
+                materials.append({"source_ref": source["source_ref"], "ref": ref})
+            portable_info = {key: value for key, value in portable.items() if key != "materials"}
+            portable_info["materials"] = materials
+            portable_info["inventory_ref"] = artifact(prefix + "/portable/inventory", canonical(portable_info).encode("utf-8"))
+            manifest["portable"] = portable_info
         if intent is not None:manifest['resume_intent']=intent
         raw_manifest = canonical(manifest).encode("utf-8")
         artifact(manifest_ref.name, raw_manifest, media=MANIFEST_TYPE)
@@ -268,7 +278,8 @@ class BridgeEvidence:
                 "resume_intent": manifest.get('resume_intent',dict(UNKNOWN)),
                 "export_current": export_current,
                 "origin": origin('bridge:'+manifest['task_id']+':'+manifest['snapshot_id'],[asdict(ref)],'bridge_projection',False),
-                "trust": "derived_from_bridge_source"}
+                "trust": "derived_from_bridge_source",
+                **({"portable": manifest["portable"]} if "portable" in manifest else {})}
 
     def _resolve(self, sid):
         self.store.session(self.scope, self.session)

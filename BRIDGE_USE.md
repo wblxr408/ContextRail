@@ -92,6 +92,21 @@ status 显示当前任务目标/约束/验收与快照数量。checkpoints 按�
 
 search 显式返回 historical_exports_may_match=true、source_current=not_checked；命中历史导出不能据此宣称它是当前 Bridge 要求，当前要求需通过指定 snapshot 的 continue/explain 核对。
 
+## 带到另一处工作区
+
+从指定 Rail 快照导出 Bridge 账本和原始材料。可重复传 `--evidence` 选入具体 Rail Ref，`--require-path` 声明接收端需要的相对文件，`--knowledge-link` 记录需要在接收端另行打开的 Basic Memory 链接。
+
+```powershell
+contextrail portable-export --workspace 'D:/my-project' --task my-task --session owner --snapshot '<Rail-ID>' --archive 'D:/transfer/任务包.zip' --evidence '{"name":"task/notes","revision":1}' --require-path 'src/app.py' --knowledge-link 'memory://main/project/notes'
+contextrail project-init --workspace 'E:/my-project' --task my-task --session receiver-owner --objective '接收选定任务'
+contextrail portable-import --workspace 'E:/my-project' --task my-task --session receiver-owner --epoch 0 --archive 'E:/transfer/任务包.zip'
+contextrail bridge-packet --workspace 'E:/my-project' --task my-task --session receiver-owner --snapshot '<新 Rail-ID>' --budget 20000
+```
+
+ZIP 保存原 Bridge 版本、逐文件完整性信息和选定的文本证据。接收端用已安装的 Bridge 校验器验证账本和来源，随后按接收端任务和租约发布新 Rail 快照。相同包重送返回同一发布结果。缺少声明的工作文件时，`dependencies` 返回 `missing`。选入的 Rail 材料以 `materials` 返回原 Ref 和接收端的新 Ref。
+
+包内只有账本、源文件、选定文本和显式链接。工作树、会话、记忆库、客户端配置、凭据文件和原租约保留在原机器。已识别凭据或无法审阅的二进制材料会拒绝打包，原文保留在原处。分享前可检查 ZIP 内选定的材料。接收端将 Bridge 原件保存在该工作区的 `.context-rail/portable/`，后续回读仍依赖这份原件。
+
 ## 离线简报与任务书签
 
 模型额度用尽时，用精确的 Rail snapshot 生成离线简报。返回任务目标、约束、验收、必读原文、事件与动作目录，以及其他原文的 Ref。仍按原 Bridge 规则核对文件来源。`--state-output` 将同一结果写入新的 UTF-8 STATE 文件。

@@ -18,7 +18,7 @@ from .store import Store
 
 
 PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "bridge-import", "bridge-packet",
-                    "bridge-receipt", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
+                    "bridge-receipt", "portable-export", "portable-import", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
                     "client-prepare", "client-continue", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "index-recover", "backup-create", "result-search",
                     "web-cache-store", "web-cache-get",
@@ -344,6 +344,16 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--native-memory-client", choices=("codex", "claude"), action="append", default=[])
             sub.add_argument('--query-binding',type=Path)
             sub.add_argument('--context-assistance',action='store_true',help='Enable exact compact recovery and optional file history on supported main-session hooks')
+        elif command in {"portable-export", "portable-import"}:
+            sub.add_argument("--archive", required=True, type=Path)
+            if command == "portable-export":
+                sub.add_argument("--snapshot", required=True)
+                sub.add_argument("--evidence", action="append", default=[], help="Exact Rail evidence ref as JSON")
+                sub.add_argument("--require-path", action="append", default=[], help="Relative workspace file needed on the receiver")
+                sub.add_argument("--knowledge-link", action="append", default=[], help="Explicit memory:// knowledge link")
+            else:
+                sub.add_argument("--epoch", required=True, type=int)
+                sub.add_argument("--bridge-validator", type=Path)
         elif command == "client-continue":
             sub.add_argument("--registry", type=Path, required=True)
             sub.add_argument("--snapshot", required=True)
@@ -738,6 +748,12 @@ def project_command(args):
             result = OutputRecorder(store, config.scope, Lease(args.session, args.epoch), config.workspace, ignore=config.ignore).capture(
                 data, budget=config.response_bytes, intent=args.intent)
             print(canonical(result))
+        elif args.command == "portable-export":
+            from .portable_bundle import export_bundle
+            print(canonical(export_bundle(store, config, args)))
+        elif args.command == "portable-import":
+            from .portable_bundle import import_bundle
+            print(canonical(import_bundle(store, config, args)))
         elif args.command == "client-continue":
             from .managed_client import continue_client
             return continue_client(store, config, args, sys.stdin.buffer, sys.stdout.buffer, sys.stderr.buffer)

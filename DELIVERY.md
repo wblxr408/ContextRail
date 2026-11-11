@@ -1,6 +1,14 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 68/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 69/72。
+
+## 第十九模块 I03
+
+选定的 Bridge 原始账本及证据可携带到另一工作区。显式 Rail Ref 在接收端保留来源映射，知识链接和工作文件依赖可分别回读和检查。导入以接收端租约发布，包含相同包重送、变更证据拒绝和凭据材料拒绝。
+
+Windows 上两项集中用例和 wheel 构建通过。实际自用任务 revision 3 在新中文目录中恢复四条必读要求和最新用户纠正，依赖 `contextrail/bridge.py` 从源端的 present 变为接收端的 missing。验收使用同一台 Windows 主机的隔离目录。见 [跨目录恢复](BRIDGE_USE.md#带到另一处工作区)。
+
+交付分支 `codex/portable-task-bundle`。
 
 ## 第十八模块 I01 / H08 实际验收
 
