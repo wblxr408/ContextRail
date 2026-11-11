@@ -39,6 +39,29 @@ residue 条目包含 kind/text/source/start/end/context/context_start/context_en
 
 文件与 SQLite 无法跨介质原子：孤立版本文件不成为当前；DB 指针是权威，工具再次读取时修复投影。人工占用的原页面路径拒绝覆盖。在途来源变化没有发布成功的保证，应回读状态后明确刷新。
 
+## 按收录时间回看
+
+`memory_recall` 的 `as_of` 接受带时区的 ISO 时间，例如 `2026-10-23T14:40:00Z`。它只用截至该时刻已收录、有原文引用的事实，沿用原有的来源权威和事件先后规则。返回的 `recorded_at` 表示系统何时收录，`time_provenance.occurred_at` 表示来源明确报告的发生时间。只有日期或缺少时区时，发生时刻保持未知。未记录收录时间的旧事实和没有版本记录的可编辑笔记会计入覆盖缺口。
+
+```json
+{"query":"数据库决定","scope":"D:/ContextRail","as_of":"2026-10-23T14:40:00Z"}
+```
+
+`memory_knowledge_page` 的 `as_of` 返回该时刻已经发布的最后一个不可变版本，附 `recorded_at` 和下一次成功发布的 `superseded_at`。历史结果不重新检查当时的外部原件。首次发布前返回 `not_recorded_as_of`，旧缓存的未知收录时刻不会被补造。默认查询仍核对当前来源，来源变化或刷新失败时只提供旧版入口。该做法参考 [ai-memory 的收录时间窗口](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/docs/temporal.md)。
+
+## 从旧故障找到修复和冲突
+
+在现有 Basic Memory 笔记的 `## Relations` 段写入明确关系，或在 YAML frontmatter 用 `relations: {fixes: ["main/旧故障"]}`。支持 `fixes`、`contradicts` 和 `causes`。以精确 permalink 或路径为目标；标题仅在作用域内唯一时可解析。
+
+```markdown
+## Relations
+
+- fixes [[main/engineering/旧故障]]
+- contradicts [[main/decisions/旧决定]]
+```
+
+`memory_relations` 按精确笔记读取入站和出站关系，返回两侧的路径、状态、范围和原始声明。可以直接查已过时的故障笔记，查看修复来自哪里。明确的矛盾保持 `unresolved`，通过核对两边证据后编辑原声明解决。目标同名或超出范围时，结果保留声明及原因。常规召回也附带关系，查历史事实时则用精确收录窗口。关系语义参考 [ai-memory 的显式关系](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/docs/typed-edges.md)。
+
 ## 本机更新
 
 通过原 `app/control.ps1 stop` 等待原 lifecycle 退出，备份数据库及本阶段文件，最小复制 memory_runtime/memory_integration、fidelity/derived_pages、reflect schema/instructions，再用原 `start`。现有 MCP 长连接须用其正常重连/新会话加载新版；不需要重新信任未变化的 Hook。

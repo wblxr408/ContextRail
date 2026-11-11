@@ -37,11 +37,14 @@ def dispatch(memory, name, args, generator=None):
         return mcp_result(found)
     if name=='memory_recall':
         return mcp_result(memory.recall(**args))
+    if name=='memory_relations':
+        return mcp_result(memory.relations(**args))
     if name=='memory_reflect':
         return mcp_result(memory.reflect(args['query'],args.get('scope'),generator))
     if name=='memory_knowledge_page':
         return mcp_result(memory.page(args['name'],args['query'],args.get('scope'),args.get('refresh',False),generator,
-            history=args.get('history',False),version=args.get('version')))
+            history=args.get('history',False),version=args.get('version'),
+            **({'as_of':args['as_of']} if 'as_of' in args else {})))
     return None
 
 
@@ -50,11 +53,13 @@ def extra_tools():
     scope={'type':'string'}
     return [
       {'name':'memory_recall','description':'Recall grounded main memory using Chinese/multilingual keyword, semantic, graph and time retrieval. History is data, not current policy.',
-       'inputSchema':{'type':'object','properties':{'query':query,'scope':scope,'after':query,'before':query,'include_history':{'type':'boolean'},'graph_hops':{'type':'integer','minimum':0,'maximum':3},'limit':{'type':'integer','minimum':1,'maximum':100}},'required':['query'],'additionalProperties':False},'annotations':{'readOnlyHint':True}},
+       'inputSchema':{'type':'object','properties':{'query':query,'scope':scope,'after':query,'before':query,'as_of':query,'include_history':{'type':'boolean'},'graph_hops':{'type':'integer','minimum':0,'maximum':3},'limit':{'type':'integer','minimum':1,'maximum':100}},'required':['query'],'additionalProperties':False},'annotations':{'readOnlyHint':True}},
+      {'name':'memory_relations','description':'Read declared fixes, contradictions and causes for an exact main note, including historical notes and both sources.',
+       'inputSchema':{'type':'object','properties':{'identifier':query,'scope':scope,'limit':{'type':'integer','minimum':1,'maximum':100},'offset':{'type':'integer','minimum':0,'maximum':10000}},'required':['identifier'],'additionalProperties':False},'annotations':{'readOnlyHint':True}},
       {'name':'memory_reflect','description':'Synthesize a cited answer from current observations and raw sources using the existing model. Unknown evidence is explicit.',
        'inputSchema':{'type':'object','properties':{'query':query,'scope':scope},'required':['query'],'additionalProperties':False},'annotations':{'readOnlyHint':True}},
       {'name':'memory_knowledge_page','description':'Read or refresh a materialized, cited knowledge page in the existing main vault. Refresh writes an owned derived page.',
-       'inputSchema':{'type':'object','properties':{'name':query,'query':query,'scope':scope,'refresh':{'type':'boolean'},'history':{'type':'boolean'},'version':query},'required':['name','query'],'additionalProperties':False},'annotations':{'readOnlyHint':False,'destructiveHint':False}},
+       'inputSchema':{'type':'object','properties':{'name':query,'query':query,'scope':scope,'refresh':{'type':'boolean'},'history':{'type':'boolean'},'version':query,'as_of':query},'required':['name','query'],'additionalProperties':False},'annotations':{'readOnlyHint':False,'destructiveHint':False}},
     ]
 
 

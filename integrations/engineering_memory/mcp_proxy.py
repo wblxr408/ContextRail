@@ -19,7 +19,7 @@ class Adapter:
     def request(self,message):
         if message.get('method')=='engineering/runtime':
             params=message.get('params',{});name=params.get('name')
-            if name not in {'recall','notes','observations','retain','reflect','page','judge','query_revision'}:
+            if name not in {'recall','notes','observations','relations','retain','reflect','page','judge','query_revision'}:
                 raise ValueError('Unsupported shared memory operation')
             args=params.get('args',[]);kwargs=params.get('kwargs',{})
             if name=='judge':
@@ -157,7 +157,7 @@ def main():
                 try: message=json.loads(line)
                 except ValueError: continue
                 params=message.get('params',{})
-                if message.get('method')=='tools/call' and params.get('name') in {'search_notes','memory_recall','memory_reflect','memory_knowledge_page'}:
+                if message.get('method')=='tools/call' and params.get('name') in {'search_notes','memory_recall','memory_relations','memory_reflect','memory_knowledge_page'}:
                     pool.submit(handle,message)
                 else: handle(message)
     finally:

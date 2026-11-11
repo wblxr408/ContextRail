@@ -73,6 +73,38 @@ def date_value(value):
         raise ValueError('Invalid ISO date: ' + str(value)) from exc
 
 
+def recorded_instant(value):
+    """Require a timestamp with a timezone for the ingestion-time axis."""
+    if not isinstance(value, str) or len(value) <= 10:
+        return None
+    try:
+        point = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        return point.astimezone(timezone.utc) if point.tzinfo is not None else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def as_of_instant(value):
+    point = recorded_instant(value)
+    if point is None:
+        raise ValueError('as_of requires an ISO timestamp with an explicit timezone')
+    return point
+
+
+def event_time(value, basis='reported_occurrence'):
+    raw = str(value) if value is not None and value != '' else None
+    point = recorded_instant(raw)
+    state = 'missing'
+    if raw is not None:
+        try:
+            datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            state = 'provided' if point else 'date_only' if len(raw) == 10 else 'ambiguous_timezone'
+        except (ValueError, OverflowError):
+            state = 'invalid'
+    return {'occurred_at': point.isoformat() if point else None, 'state': state, 'source_date': raw,
+            'basis': basis if raw is not None else 'not_declared'}
+
+
 def atomic_text(path, text):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,22 +144,133 @@ def parse_note(path, vault):
         explicit = re.search(r'\d{4}-\d{2}-\d{2}', str(meta.get('title', '')))
         stamp = date_value(explicit.group()) if explicit else ''
     declared=next(((field,meta[field]) for field in ('date','updated','started') if meta.get(field)),None)
-    time_info={'occurred_at':None,'state':'missing','source_date':None,'basis':'not_declared'}
+    time_info=event_time(None)
     if declared:
-        field,value=declared;raw_time=str(value)
-        time_info.update(source_date=raw_time,basis=field)
-        try:
-            parsed=datetime.fromisoformat(raw_time.replace('Z','+00:00'))
-            if len(raw_time)==10:time_info['state']='date_only'
-            elif parsed.tzinfo is None:time_info['state']='ambiguous_timezone'
-            else:time_info.update(occurred_at=parsed.astimezone(timezone.utc).isoformat(),state='provided')
-        except (ValueError,OverflowError):time_info['state']='invalid'
+        field,value=declared
+        time_info=event_time(value,field)
     elif stamp:time_info.update(state='title_inferred_date',source_date=stamp,basis='title_not_event_time')
+    payload = meta.get('memory_payload') if meta.get('memory_event') else None
+    recorded = None
+    if isinstance(payload, dict):
+        recorded = recorded_instant(payload.get('recorded_at'))
+        if recorded:
+            time_info = event_time(payload.get('reported_occurrence'))
     return {'title': str(meta.get('title') or path.stem), 'permalink': permalink,
             'path': name, 'content': body, 'meta': meta, 'date': stamp,
             'scope': meta.get('cwd') or meta.get('repository') or meta.get('scope') or 'global',
             'status': str(meta.get('status') or 'unknown'),'time_provenance':time_info,
+            'recorded_at': recorded.isoformat(timespec='microseconds') if recorded else None,
             'links': re.findall(r'\[\[([^\]|]+)(?:\|[^\]]+)?\]\]', body)}
+
+
+_RELATIONS = ('fixes', 'contradicts', 'causes')
+_RELATION_SECTION = re.compile(r'^##\s+(?:Relations|关系)\s*$', re.IGNORECASE | re.MULTILINE)
+_RELATION_LINE = re.compile(r'^\s*[-*]\s+(fixes|contradicts|causes)\s+\[\[([^\]|]+)(?:\|[^\]]+)?\]\](?:\s.*)?$', re.IGNORECASE)
+
+
+def _declared_relations(note):
+    metadata = note['meta'].get('relations')
+    if isinstance(metadata, dict):
+        for kind in _RELATIONS:
+            targets = metadata.get(kind)
+            if isinstance(targets, list):
+                for target in targets[:50]:
+                    if isinstance(target, str):
+                        yield kind, target, {'basis':'frontmatter_relations', 'field':'relations.' + kind,
+                                             'declaration':target}
+    body = note['content']
+    if not _RELATION_SECTION.search(body):
+        return
+    active, fence = False, None
+    for number, line in enumerate(body.splitlines(), 1):
+        marker = re.match(r'^\s*(`{3,}|~{3,})', line)
+        if marker:
+            symbol = marker[1]
+            if fence is None:
+                fence = symbol
+            elif symbol.startswith(fence):
+                fence = None
+            continue
+        if fence:
+            continue
+        if re.match(r'^#{1,2}\s', line):
+            active = _RELATION_SECTION.fullmatch(line) is not None
+        if active and len(line) <= 1024 and (matched := _RELATION_LINE.fullmatch(line)):
+            yield matched[1].lower(), matched[2], {'basis':'markdown_relations', 'body_line':number,
+                                                    'declaration':line.strip()}
+
+
+def _note_identifier(value):
+    return value.strip().replace('\\', '/').removesuffix('.md').strip('/')
+
+
+def _note_ref(note):
+    return {key:note[key] for key in ('permalink','path','title','scope','status')}
+
+
+class NoteRelations:
+    """Resolve existing Basic Memory declarations against one visible catalog."""
+    def __init__(self, notes):
+        self.paths, self.titles, self.by_note = {}, {}, {}
+        for note in notes:
+            for identity in {_note_identifier(note[key]) for key in ('permalink','path')}:
+                self.paths.setdefault(identity, []).append(note)
+            self.titles.setdefault(_note_identifier(note['title']), []).append(note)
+        for note in notes:
+            source = _note_ref(note)
+            seen = set()
+            for kind, raw_target, declaration in _declared_relations(note):
+                if not raw_target.strip() or len(raw_target) > 512 or any(ord(char) < 32 for char in raw_target):
+                    continue
+                matches = self.resolve(raw_target, source_scope=note['scope'])
+                target = _note_ref(matches[0]) if len(matches) == 1 else None
+                key = (kind, target['permalink'] if target else _note_identifier(raw_target))
+                if key in seen or (target and target['permalink'] == source['permalink']):
+                    continue
+                seen.add(key)
+                state = ('target_ambiguous' if len(matches) > 1 else 'target_unavailable' if target is None
+                         else 'unresolved' if kind == 'contradicts' else 'declared')
+                relation = {'kind':kind, 'state':state, 'source':source, 'target':target,
+                            'target_identifier':raw_target, 'evidence':declaration}
+                self.by_note.setdefault(note['path'], []).append(relation)
+                if target:
+                    self.by_note.setdefault(target['path'], []).append(relation)
+                if len(seen) >= 50:
+                    break
+
+    def resolve(self, identifier, *, source_scope=None):
+        key = _note_identifier(identifier)
+        matches = self.paths.get(key) or self.titles.get(key, [])
+        if source_scope:
+            matches = [note for note in matches if scope_matches(note['scope'], source_scope)
+                       or scope_matches(source_scope, note['scope'])]
+        return matches
+
+
+def retained_event(note):
+    if note['path'].rpartition('/')[0] != 'engineering/memory-facts':
+        return None
+    event = note['meta'].get('memory_event')
+    payload = note['meta'].get('memory_payload')
+    if not isinstance(event, str) or not event.strip() or not isinstance(payload, dict):
+        return None
+    claims, sources = payload.get('claims'), payload.get('sources')
+    if not isinstance(claims, list) or not claims or not isinstance(sources, dict):
+        return None
+    for claim in claims:
+        if not isinstance(claim, dict) or any(not isinstance(claim.get(key), str) or not claim[key].strip()
+                                             for key in ('subject','predicate','value','quote','source')):
+            return None
+        if claim['source'] not in {'user','final'} or not isinstance(sources.get(claim['source']), str):
+            return None
+        if claim['quote'] not in sources[claim['source']]:
+            return None
+    occurred = payload.get('occurred_at')
+    if occurred is not None and (not isinstance(occurred, str) or event_time(occurred)['state'] == 'invalid'):
+        return None
+    if not occurred and not recorded_instant(payload.get('recorded_at')):
+        return None
+    return event, payload
 
 
 class LocalModels:
@@ -250,28 +393,47 @@ class MemoryRuntime:
             self.note_cache_bytes-=self._note_cache.pop(path)[2]
         return found
 
-    def _selected(self, scope, after, before, include_history, metadata):
+    def _selected(self, notes, scope, after, before, include_history, metadata, as_of):
         result = []
         after, before = date_value(after), date_value(before)
-        notes = self.notes()
         fact_events={n['meta'].get('memory_event') for n in notes if n['meta'].get('memory_event')}
-        current = {h['event_id']: [] for row in self.observations(scope) for h in row['current_evidence']} if not include_history else {}
+        current = {}
+        retained = [(note, entry) for note in notes if (entry := retained_event(note))] if as_of else []
         if not include_history:
-            for row in self.observations(scope):
+            observations = (self._observation_rows((entry for _, entry in retained), scope, as_of)
+                            if as_of else self.observations(scope))
+            for row in observations:
                 for h in row['current_evidence']:
-                    current[h['event_id']].append(h)
-        superseded = {target for note in notes for target in re.findall(r'-\s*(?:supersedes|replaces)\s+\[\[([^\]|]+)', note['content'])}
+                    current.setdefault(h['event_id'], []).append(h)
+        unknown_events, unversioned_notes = set(), 0
+        history_paths = {note['path'] for note, _ in retained}
+        superseded = set() if as_of else {
+            target for note in notes if scope_matches(note['scope'], scope)
+            for target in re.findall(r'-\s*(?:supersedes|replaces)\s+\[\[([^\]|]+)', note['content'])}
         for note in notes:
-            if not include_history:
+            if not scope_matches(note['scope'], scope):
+                continue
+            if as_of:
+                event = note['meta'].get('memory_event')
+                if note['path'] not in history_paths:
+                    unversioned_notes += 1
+                    continue
+                recorded = recorded_instant(note['recorded_at'])
+                if not recorded:
+                    unknown_events.add(event)
+                    continue
+                if recorded > as_of:
+                    continue
+                claims = note['meta']['memory_payload']['claims']
+                note = dict(note, status='accepted' if all(c['source']=='user' and c.get('authority',True) for c in claims) else 'experimental')
+            if not include_history and not as_of:
                 from checkpoint_lifecycle import is_history
                 if is_history(note['meta']):continue
             if note['meta'].get('automatic_capture') and note['meta'].get('source_event') in fact_events:
                 continue  # One event's facts carry its source identity; avoid duplicate derived capture results.
-            if not scope_matches(note['scope'], scope):
+            if not include_history and not as_of and note['status'] in {'superseded', 'revoked', 'rejected', 'obsolete'}:
                 continue
-            if not include_history and note['status'] in {'superseded', 'revoked', 'rejected', 'obsolete'}:
-                continue
-            if not include_history and (note['title'] in superseded or note['permalink'] in superseded):
+            if not include_history and not as_of and (note['title'] in superseded or note['permalink'] in superseded):
                 continue
             if not include_history and note['meta'].get('memory_event'):
                 active = current.get(note['meta']['memory_event'], [])
@@ -285,7 +447,7 @@ class MemoryRuntime:
             if metadata and any(note['meta'].get(k) != v for k, v in metadata.items()):
                 continue
             result.append(note)
-        return result
+        return result, {'unknown_recorded_events':len(unknown_events), 'unversioned_notes_excluded':unversioned_notes}
 
     def _dense(self, query, notes):
         q = self.models.embed([query])[0]
@@ -320,7 +482,8 @@ class MemoryRuntime:
         return sorted(ranked, reverse=True)
 
     def recall(self, query, *, scope=None, after=None, before=None, include_history=False,
-               mode='hybrid', limit=5, page=1, metadata=None, graph_hops=2,rerank_limit=20,include_revision=False):
+               mode='hybrid', limit=5, page=1, metadata=None, graph_hops=2,rerank_limit=20,include_revision=False,
+               as_of=None):
         if type(include_revision) is not bool:raise ValueError('include_revision must be boolean')
         if not isinstance(query, str) or not query.strip():
             raise ValueError('A nonempty query is required')
@@ -329,14 +492,21 @@ class MemoryRuntime:
         if mode not in {'text', 'hybrid', 'vector'} or not 1 <= limit <= 100 or page < 1:
             raise ValueError('Invalid search mode or pagination')
         if type(graph_hops) is not int or not 0<=graph_hops<=3:raise ValueError('Graph hops must be 0..3')
+        point = as_of_instant(as_of) if as_of is not None else None
+        if point:
+            if mode == 'vector':
+                raise ValueError('as_of reads retained versions with text retrieval')
+            mode = 'text'
         with self.lock:
             self._passages={}
-            notes = self._selected(scope, after, before, include_history, metadata)
+            catalog = self.notes()
+            notes, temporal = self._selected(catalog, scope, after, before, include_history, metadata, point)
             # Deduplicate BEFORE ranking/pagination and prefer current/newest source versions.
             by_id = {}
             for note in sorted(notes, key=lambda n: (n['date'], n['path'])):
                 by_id[note['permalink']] = note
             notes = list(by_id.values())
+            relations = NoteRelations([] if point else [note for note in catalog if scope_matches(note['scope'], scope)])
             counters = {n['permalink']: Counter(tokens(n['title'] * 3 + '\n' + n['content'])) for n in notes}
             df = Counter(t for c in counters.values() for t in c)
             lengths = {pid: sum(c.values()) for pid, c in counters.items()}
@@ -390,8 +560,14 @@ class MemoryRuntime:
                     other=names.get(link) or (link if link in by_id else None)
                     if other:
                         adjacency[pid].add(other);adjacency[other].add(pid)
+                for relation in relations.by_note.get(note['path'], ()):
+                    target = relation['target']
+                    if target:
+                        other = target if relation['source']['path'] == note['path'] else relation['source']
+                        if by_id.get(other['permalink'], {}).get('path') == other['path']:
+                            adjacency[pid].add(other['permalink'])
             frontier=list(sorted(ranks,key=ranks.get,reverse=True)[:3]);visited=set(frontier)
-            for hop in range(0 if boolean else graph_hops):
+            for hop in range(0 if boolean or point else graph_hops):
                 next_frontier=[]
                 for pid in frontier:
                     for linked in sorted(adjacency[pid]):
@@ -415,12 +591,33 @@ class MemoryRuntime:
                         'status': by_id[p]['status'], 'scope': by_id[p]['scope'],
                         'score': ranks[p], 'retrieval': reasons[p],
                         'time_provenance':by_id[p].get('time_provenance'),
+                        'recorded_at':by_id[p].get('recorded_at'),
+                        **({'relations':relations.by_note[by_id[p]['path']][:10]} if by_id[p]['path'] in relations.by_note else {}),
                         'source_session':by_id[p]['meta'].get('session_id'),
                         'source_event':by_id[p]['meta'].get('source_event') or by_id[p]['meta'].get('memory_event')} for p in page_ids]
             return {'results': results, 'total': len(order), 'page': page, 'mode': mode,
-                    'model': getattr(self.models, 'embedding_name', None),
+                    'model': None if point else getattr(self.models, 'embedding_name', None),
+                    **({'temporal': {**temporal, 'as_of':point.isoformat(timespec='microseconds'),
+                                    'basis':'retained_fact_recorded_at'}} if point else {}),
                     **({'catalog_revision':self._query_revision_value()} if include_revision else {}),
                     'evidence_boundary': 'Retrieved history; verify applicability against current instructions.'}
+
+    def relations(self, identifier, *, scope=None, limit=20, offset=0):
+        if not isinstance(identifier, str) or not identifier.strip() or len(identifier) > 512:
+            raise ValueError('Supply the exact note title, path, or permalink')
+        if type(limit) is not int or type(offset) is not int or not 1 <= limit <= 100 or not 0 <= offset <= 10000:
+            raise ValueError('Invalid relation page limits')
+        with self.lock:
+            index = NoteRelations([note for note in self.notes() if scope_matches(note['scope'], scope)])
+            matches = index.resolve(identifier)
+            if len(matches) != 1:
+                return {'status':'ambiguous' if matches else 'not_found', 'entries':[], 'total':0, 'next_offset':None}
+            note = matches[0]
+            entries = sorted(index.by_note.get(note['path'], ()),
+                             key=lambda e:(e['kind'],e['source']['permalink'],e['target_identifier']))
+            return {'status':'observed', 'note':_note_ref(note), 'entries':entries[offset:offset+limit],
+                    'total':len(entries), 'offset':offset, 'next_offset':offset+limit if offset+limit<len(entries) else None,
+                    'basis':'explicit_markdown_relations'}
 
     def _excerpt(self,note, terms):
         if note['permalink'] in self._passages:
@@ -450,7 +647,10 @@ class MemoryRuntime:
             require_safe_identity(claim.get('source',''))
         processed=sanitize_capture({'claims':claims,'sources':sources},'memory')
         claims=processed.value['claims'];sources=processed.value['sources']
-        occurred = date_value(occurred_at or datetime.now(timezone.utc).isoformat())
+        reported = event_time(occurred_at)
+        if reported['state'] == 'invalid':
+            raise ValueError('Invalid reported occurrence')
+        occurred = reported['occurred_at'] or reported['source_date']
         for claim in claims:
             for field in ('subject', 'predicate', 'value', 'quote', 'source'):
                 if not isinstance(claim.get(field), str) or not claim[field].strip():
@@ -460,7 +660,6 @@ class MemoryRuntime:
         if len({scope_key(c.get('scope')) for c in claims}) != 1:
             raise ValueError('A source event must use one trusted project scope')
         payload = {'claims': claims, 'sources': sources, 'occurred_at': occurred, '_capture':processed.provenance()}
-        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         with self.lock:
             # Reject projection directories redirected outside the authoritative vault.
             for folder in ('engineering','engineering/memory-facts','engineering/observations'):
@@ -470,9 +669,19 @@ class MemoryRuntime:
             self._reconcile_events()
             # Identity covers the supplied payload; default timestamp is reconciled on exact retry.
             row = self.db.execute('SELECT payload FROM memory_events WHERE id=?', (event_id,)).fetchone()
-            if row and occurred_at is None:
-                payload['occurred_at'] = json.loads(row[0])['occurred_at']
-                serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            prior = json.loads(row[0]) if row else {}
+            if not row:
+                payload.update(recorded_at=datetime.now(timezone.utc).isoformat(timespec='microseconds'),
+                               reported_occurrence=reported['source_date'])
+            elif 'recorded_at' in prior:
+                payload.update(recorded_at=prior['recorded_at'], reported_occurrence=reported['source_date'])
+                if occurred_at is None or (occurred and occurred == prior.get('occurred_at')):
+                    payload.update(occurred_at=prior.get('occurred_at'), reported_occurrence=prior.get('reported_occurrence'))
+            else:
+                # A replay of a legacy event preserves its original schema and
+                # never assigns a new collection date to the old source.
+                payload['occurred_at'] = prior.get('occurred_at') if occurred_at is None else date_value(occurred_at)
+            serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             if row and row[0] != serialized:
                 raise ConflictError('Event identity already binds a different payload')
             target=self._event_path(event_id)
@@ -488,11 +697,12 @@ class MemoryRuntime:
                             'history_origin':'retained_fact'},
                            '\n\n'.join(c['value'] + '\n\n> ' + c['quote'] for c in claims))
             # Publish authoritative source before caching; retry rebuilds a missing cache.
-            atomic_text(self._event_path(event_id), raw)
+            if not row:
+                atomic_text(target, raw)
             with self.db:
                 self.db.execute('INSERT OR IGNORE INTO memory_events VALUES(?,?)', (event_id, serialized))
             self._publish_observations()
-            return {'status': 'retained', 'event_id': event_id, 'duplicate': bool(row),
+            return {'status': 'retained', 'event_id': event_id, 'duplicate': bool(row), 'recorded_at': payload.get('recorded_at'),
                     'source': str(self._event_path(event_id))}
 
     def _reconcile_events(self):
@@ -502,13 +712,8 @@ class MemoryRuntime:
             try:
                 if not canonical_path(path).is_relative_to(self.vault):continue
                 note = parse_note(path, self.vault)
-                event = note['meta'].get('memory_event')
-                payload = note['meta'].get('memory_payload')
-                if event and isinstance(payload, dict):
-                    claims=payload.get('claims');sources=payload.get('sources')
-                    if not isinstance(claims,list) or not claims or not isinstance(sources,dict):continue
-                    if any(not isinstance(c,dict) or any(not isinstance(c.get(k),str) or not c[k].strip() for k in ('subject','predicate','value','quote','source')) or c['source'] not in {'user','final'} or not isinstance(sources.get(c['source']),str) or c['quote'] not in sources[c['source']] for c in claims):continue
-                    if not isinstance(payload.get('occurred_at'),str) or not date_value(payload['occurred_at']):continue
+                if entry := retained_event(note):
+                    event, payload = entry
                     present[event] = json.dumps(payload, ensure_ascii=False, sort_keys=True)
             except (OSError, yaml.YAMLError,TypeError,ValueError):
                 continue
@@ -519,34 +724,46 @@ class MemoryRuntime:
             for event, payload in present.items():
                 self.db.execute('INSERT INTO memory_events VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload', (event,payload))
 
-    def observations(self, scope=None):
+    def observations(self, scope=None, *, as_of=None):
+        point = as_of_instant(as_of) if as_of is not None else None
         with self.lock:
+            if point:
+                events = (entry for note in self.notes() if (entry := retained_event(note)))
+                return self._observation_rows(events, scope, point)
             self._reconcile_events()
-            groups = {}
-            for row in self.db.execute('SELECT id,payload FROM memory_events'):
-                payload = json.loads(row['payload'])
-                for claim in payload['claims']:
-                    claim_scope = claim.get('scope', 'global')
-                    if not scope_matches(claim_scope, scope):
-                        continue
-                    key = (scope_key(claim_scope), concept_key(claim['subject']), concept_key(claim['predicate']))
-                    group = groups.setdefault(key, {'subject': claim['subject'], 'predicate': claim['predicate'], 'scope': claim_scope, 'history': []})
-                    group['history'].append({'value': claim['value'], 'quote': claim['quote'], 'role': claim['source'],
-                                             'authority': claim.get('authority',claim['source']=='user'),
-                                             'event_id': row['id'], 'occurred_at': payload['occurred_at'],
-                                             'source': 'main/engineering/memory-facts/' + self._event_path(row['id']).stem})
-            result = []
-            for group in groups.values():
-                group['history'].sort(key=lambda h: (h['occurred_at'], h['event_id']))
-                # Explicit user decisions prevail over unverified assistant-only claims.
-                authoritative = [h for h in group['history'] if h['role']=='user' and h['authority']] or group['history']
-                latest = authoritative[-1]
-                group['current'] = latest['value']
-                group['current_evidence'] = [h for h in authoritative if h['value']==latest['value']]
-                group['proof_count'] = len({h['event_id'] for h in group['history']})
-                group['status'] = 'accepted' if latest['role']=='user' and latest['authority'] else 'experimental'
-                result.append(group)
-            return result
+            events = ((row['id'], json.loads(row['payload'])) for row in self.db.execute('SELECT id,payload FROM memory_events'))
+            return self._observation_rows(events, scope)
+
+    def _observation_rows(self, events, scope, point=None):
+        groups = {}
+        for event_id, payload in events:
+            recorded = recorded_instant(payload.get('recorded_at'))
+            if point and (recorded is None or recorded > point):
+                continue
+            for claim in payload['claims']:
+                claim_scope = claim.get('scope', 'global')
+                if not scope_matches(claim_scope, scope):
+                    continue
+                key = (scope_key(claim_scope), concept_key(claim['subject']), concept_key(claim['predicate']))
+                group = groups.setdefault(key, {'subject': claim['subject'], 'predicate': claim['predicate'], 'scope': claim_scope, 'history': []})
+                group['history'].append({'value': claim['value'], 'quote': claim['quote'], 'role': claim['source'],
+                                         'authority': claim.get('authority',claim['source']=='user'),
+                                         'event_id': event_id, 'occurred_at': payload.get('occurred_at'),
+                                         'recorded_at': payload.get('recorded_at') if recorded else None,
+                                         'source': 'main/engineering/memory-facts/' + self._event_path(event_id).stem})
+        result = []
+        for group in groups.values():
+            group['history'].sort(key=lambda h: (date_value(h['occurred_at'] or h['recorded_at']),
+                                                 h['recorded_at'] or '', h['event_id']))
+            # Explicit user decisions prevail over unverified assistant-only claims.
+            authoritative = [h for h in group['history'] if h['role']=='user' and h['authority']] or group['history']
+            latest = authoritative[-1]
+            group['current'] = latest['value']
+            group['current_evidence'] = [h for h in authoritative if h['value']==latest['value']]
+            group['proof_count'] = len({h['event_id'] for h in group['history']})
+            group['status'] = 'accepted' if latest['role']=='user' and latest['authority'] else 'experimental'
+            result.append(group)
+        return result
 
     def _publish_observations(self):
         keep=set()
@@ -555,7 +772,9 @@ class MemoryRuntime:
             name = uuid5(NAMESPACE_URL, key).hex
             keep.add(name+'.md')
             body = f'# {row["subject"]}：{row["predicate"]}\n\n当前：{row["current"]}\n\n## 历史和出处\n\n'
-            body += '\n'.join(f'- {h["occurred_at"]}：{h["value"]} [{h["role"]}] ({h["source"]})\n  > {h["quote"]}' for h in row['history'])
+            body += '\n'.join(
+                f'- {h["occurred_at"] or "发生时间未记录"}：{h["value"]} [{h["role"]}] ({h["source"]})\n  > {h["quote"]}'
+                for h in row['history'])
             target=self._managed_path('engineering/observations',name+'.md')
             if target.is_file() and parse_note(target,self.vault)['meta'].get('managed_by')!='engineering-memory':raise ConflictError('Observation destination contains a human-authored note')
             atomic_text(target, markdown({'title':row['subject']+'：'+row['predicate'], 'type':'observation', 'scope':row['scope'], 'status':row['status'], 'proof_count':row['proof_count'], 'managed_by':'engineering-memory',
@@ -666,16 +885,19 @@ class MemoryRuntime:
         return json.dumps({'catalog':self._generation(),'retrieval_policy':'main-query-v1',
             'embedding':getattr(self.models,'embedding_name',None),'reranker':getattr(self.models,'reranker_name',None)},ensure_ascii=False)
 
-    def page(self, name, query, scope=None, refresh=False, generator=None, *, history=False, version=None):
+    def page(self, name, query, scope=None, refresh=False, generator=None, *, history=False, version=None, as_of=None):
         if not isinstance(name,str) or not name.strip() or any(c in name for c in '/\\:') or name in {'.','..'}:
             raise ValueError('Knowledge page name must be a simple nonempty label')
         if not isinstance(query,str) or not query.strip() or type(history) is not bool or type(refresh) is not bool:
             raise ValueError('Invalid knowledge page request')
         if version is not None and (not isinstance(version,str) or not version or len(version)>128):raise ValueError('Invalid page version')
-        if sum((refresh,history,version is not None))>1:raise ValueError('Choose refresh, history, or exact version')
+        if sum((refresh,history,version is not None,as_of is not None))>1:
+            raise ValueError('Choose refresh, history, exact version, or as_of')
+        if as_of is not None:
+            as_of_instant(as_of)
         identity=json.dumps([name,scope_key(scope)],ensure_ascii=False)
         from derived_pages import page
-        with self.lock:return page(self,name,query,scope,identity,refresh=refresh,generator=generator,history=history,version=version)
+        with self.lock:return page(self,name,query,scope,identity,refresh=refresh,generator=generator,history=history,version=version,as_of=as_of)
 
 
 def runtime_from_config(config, home):

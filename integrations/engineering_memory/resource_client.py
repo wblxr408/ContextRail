@@ -57,10 +57,12 @@ class RemoteRuntime:
     def recall(self,*args,**kwargs):return self.invoke('recall',*args,**kwargs)
     def notes(self):return self.invoke('notes')
     def observations(self,*args,**kwargs):return self.invoke('observations',*args,**kwargs)
+    def relations(self,*args,**kwargs):return self.invoke('relations',*args,**kwargs)
     def retain(self,*args,**kwargs):return self.invoke('retain',*args,**kwargs)
     def reflect(self,query,scope=None,generator=None):return self.invoke('reflect',query,scope,_synthesize=generator is not None)
-    def page(self,name,query,scope=None,refresh=False,generator=None,*,history=False,version=None):
-        return self.invoke('page',name,query,scope,refresh,_synthesize=generator is not None,history=history,version=version)
+    def page(self,name,query,scope=None,refresh=False,generator=None,*,history=False,version=None,as_of=None):
+        return self.invoke('page',name,query,scope,refresh,_synthesize=generator is not None and as_of is None,
+                           history=history,version=version,**({'as_of':as_of} if as_of is not None else {}))
     def close(self):
         if self._db:self._db.close();self._db=None
 

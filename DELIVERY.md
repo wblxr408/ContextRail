@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 58/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 60/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -71,3 +71,9 @@ Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文
 离线简报从精确快照保留需求、事件、动作和原文 Ref，原学习队列可只读翻页。书签固定工作树内任务与快照，可保存搜索并在 PowerShell 补全。Windows 本地 8 项集中验收和 wheel 构建通过，包含原记忆运行时显式记事、Bridge 来源校验及中文 Tab 补全。另只读验证了实际工作区的原记忆队列。见 [离线简报与任务书签](BRIDGE_USE.md#离线简报与任务书签)。
 
 交付分支 `codex/offline-task-navigation`。
+
+## 第十二模块 G02 / G03
+
+事实收录时间和事件时间分开，知识页按成功发布窗口读取不可变历史。原 Markdown 的 fixes、contradicts、causes 在查询中保留两侧出处和范围。Windows 本地 8 项集中验收及 wheel 构建通过，含独立 vault 的真实回环 RPC。通过只读连接从原库取回一个真实归档知识页，385 字节、4 条来源。实际共享服务部署沿用现有更新流程。见 [记忆版本和关系](GROUNDED_SUMMARY_USE.md#按收录时间回看)。
+
+交付分支 `codex/temporal-memory-relations`。

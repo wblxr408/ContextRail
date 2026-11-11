@@ -151,6 +151,8 @@ class ExistingMemory:
             permalink=note['permalink'];identifier(permalink)
             evidence_time=note.get('time_provenance')
             if not isinstance(evidence_time,dict):evidence_time={'occurred_at':None,'state':'unknown_precision','source_date':note.get('date'),'basis':'legacy_recall_date'}
+            if isinstance(note.get('recorded_at'),str):
+                evidence_time={**evidence_time,'recorded_at':note['recorded_at']}
             hits.append({'origin':'memory','id':permalink,'title':str(note.get('title',''))[:160],
                 'preview':str(note.get('excerpt',''))[:520],'preview_truncated':len(str(note.get('excerpt','')))>520,
                 'task':None,'source_session':note.get('source_session'),
@@ -158,4 +160,6 @@ class ExistingMemory:
                 'time':evidence_time,'status':note.get('status','unknown'),
                 'ref':{'reader':'basic-memory.read_note','identifier':permalink,'project':'main'},
                 'current_task_membership':False,'evidence_role':'retrieved_history','source_score':note.get('score')})
+            if isinstance(note.get('relations'),list) and note['relations']:
+                hits[-1]['relations']=note['relations'][:5]
         return hits,value.get('total',len(hits)),{'scope':'main_workspace_and_applicable_global_history','mode':value.get('mode'),'complete':True},value.get('catalog_revision')
