@@ -172,3 +172,28 @@ D:/ContextRail/.venv/Scripts/python.exe -m contextrail mcp --workspace D:/Contex
 ```
 
 旧回归套件本轮未执行；官方 SDK 客户端调用已验证，个人桌面会话注册和 Hook 拦截仍待 A06。来源参考与其余批次见 [自用 TODO](docs/self-use-integration-todo.md) 及 `openspec/changes/self-use-output-loop/`。
+
+## 用实际任务校准读取收益
+
+`contextrail-eval self-use --case case.json --output report.json` 对照完整来源和「任务包加一次精确冷读」。先选真实任务、当前快照及其冷证据，在本地 JSON 中写下已知的正确下一步和必读要求。工具在私有 SQLite 副本上运行，将本地读取量、时间、遗漏和原文一致性写入新报告。
+
+```json
+{
+  "schema": 1,
+  "workspace": "D:/my-project",
+  "task": "my-task",
+  "session": "owner",
+  "snapshot": "<exact Rail snapshot>",
+  "budget": 20000,
+  "oracle": {
+    "required_ids": ["R001", "R003"],
+    "next_action": "由宿主独立确认的下一步",
+    "cold_ref": {"name": "logs/query", "revision": 2, "start": 1024, "end": 1040},
+    "cold_text": "\"complete\": true"
+  }
+}
+```
+
+示例中的 `cold_ref` 和 `cold_text` 要一起换成选定快照的精确字节窗口和独立确认的原文。可用 `secondary` 指定同库的第二任务，字段为 `task`、`session`、`snapshot`、`objective`。可用 `interruption` 指定先前的原生历史 `report`，提供 `client`、`native_session`、`expected_gap`。可用 `outage` 指定受管启动的 `report` 及其 `workspace`、`task`、`session`、`snapshot`、`client`、`objective`。中断和故障会保留原来的证据缺口。未采样的字段以 `null` 表示。完整来源计算交付的原始字节，按需路径计算实际序列化的任务包和冷页响应字节。
+
+本轮实测和各交付模块的可观察结果见 [交付记录](DELIVERY.md#第二十模块-i08)。

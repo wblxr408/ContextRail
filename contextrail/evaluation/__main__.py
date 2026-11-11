@@ -49,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     dashboard.add_argument("--port", type=int, default=0,
                            help="Loopback port; defaults to 0 so Windows selects a free port")
     dashboard.add_argument("--runs-root", type=Path, default=Path("evaluation-runs"))
+    self_use = commands.add_parser("self-use", help="Measure a selected real Bridge task and native receipts locally")
+    self_use.add_argument("--case", type=Path, required=True, help="Exact local task, comparison oracle and optional receipts")
+    self_use.add_argument("--output", type=Path, help="Save a new JSON report as well as printing it")
     ablation = commands.add_parser("semantic-ablation",
                                    help="Run the deterministic C0/C1/C2 semantic-layer ablation (no model)")
     ablation.add_argument("--output", type=Path, default=Path("evaluation-runs/semantic-ablation"))
@@ -80,6 +83,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "dashboard":
         serve_dashboard(host=args.host, port=args.port, runs_root=args.runs_root)
+        return 0
+    if args.command == "self-use":
+        from ..errors import RailError
+        from ..models import canonical
+        from .self_use import calibrate
+        import sqlite3
+        import sys
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8")
+        try:
+            report = canonical(calibrate(args.case))
+            if args.output:
+                with args.output.open("x", encoding="utf-8", newline="\n") as stream:
+                    stream.write(report + "\n")
+        except (RailError, sqlite3.Error, OSError, TypeError, ValueError, KeyError) as exc:
+            print(str(exc) if isinstance(exc, RailError) else "Invalid local calibration case or unavailable report path.", file=sys.stderr)
+            return 1
+        print(report)
         return 0
     if args.command == "semantic-ablation":
         from .semantic_ablation import run_ablation_suite
