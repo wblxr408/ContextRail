@@ -2,6 +2,14 @@
 
 按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 68/72。
 
+## 第十八模块 I01 / H08 实际验收
+
+受管入口启动选定的 Codex 或 Claude Code，将精确快照和用户原文送入原生 CLI。复用现有只读 MCP、Windows Job、源会话读取与原生配置。两个阶段用例验证两端回读同一快照及 CRLF 冷页、原生退出码和会话身份，并验证无关快照在启动前被拒绝。wheel 构建通过。
+
+在 Windows 本机中文临时目录运行 `examples/native_client_acceptance.py --managed`。Codex 调用 `context.packet` 与 `context.get`，原文和最终 JSON 均一致，退出 0。Claude Code 启动事件返回自己的原生 ID，选用同一快照并报告未绑定源历史，模型调用遇到 429，在 170 秒内未调用 MCP，启动器返回 124。两项仍保留开放。见 [受管启动与回执](NATIVE_CLIENTS.md#通过指定客户端继续同一工作块)。
+
+交付分支 `codex/native-managed-continuation`。
+
 ## 首次集中上传：截至 D07 / H03 / D08
 
 首次上传包含此前尚未提交的自用功能依赖：项目配置和客户端适配、结果保存与原文回读、Bridge 要求导出、提取与批量读取、索引与目录同步、来源身份与脱敏、原生事件与时间线、三源查询、分层恢复和请求计量。各阶段的契约、实现与验收见 `openspec/changes/`；固定上游及许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

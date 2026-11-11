@@ -65,6 +65,21 @@ memory-command 文件是可信本机 argv 数组，不能来自模型参数或�
 
 Windows 上，Bridge 校验器、组合记忆 Hook 和配置写入适配器在隐藏控制台的进程树中运行。超时包含 stdin 写入，超时或取消时清理其子进程；命令已结束但子进程还持有输出管道时，也会清理。切换 registry 时遇到短暂的文件占用会重试，持续占用会返回冲突并保留原配置。
 
+## 通过指定客户端继续同一工作块
+
+在 `client-prepare` 后，使用布局的 `registry`、当前精确 Rail `snapshot` 和 UTF-8 提示文件。两端分别运行自己的 CLI 并创建各自的原生会话。
+
+```powershell
+contextrail client-continue --workspace 'D:/my-project' --task my-task --session owner --registry 'D:/my-project/.context-rail/clients/v1/registry.json' --snapshot '<Rail-ID>' --client codex --input 'D:/prompts/继续.md'
+contextrail client-continue --workspace 'D:/my-project' --task my-task --session owner --registry 'D:/my-project/.context-rail/clients/v1/registry.json' --snapshot '<Rail-ID>' --client claude --input 'D:/prompts/继续.md' --source-client codex --source-native-session '<实际返回的原生 ID>'
+```
+
+省略 `--input` 时从 stdin 读 UTF-8，保留原换行。启动器在前面附上精确任务入口，客户端按该快照调用 `context.packet` 和按需 `context.get`。快照过期或发布与布局不一致时，先按 Bridge 流程准备当前视图，再显式选择新 ID。
+
+源会话必须出现在同工作区、同任务的可信查询绑定内。可以在准备布局时绑定，也可以用 `--history-binding` 选择该次的绑定文件。缺失或未绑定的历史会标在回执中，仍可通过任务包接续。可读的历史通过现有只读工具按原会话回读。目标会话 ID 仅取原生启动事件，任务所有者仍由原租约记录。
+
+stdout 是原生 JSON 流，客户端退出后原样交付。stderr 带原生诊断和 ContextRail 回执。实际客户端退出码原样返回，等待超时为 124，取消为 130。`--timeout` 的默认值是 180 秒。自定义安装路径可通过可信 JSON argv 文件传给 `--client-command`。Windows Codex 自定义入口使用实际 exe 或 Node argv，因为其 TOML 覆盖参数含有引号。客户端继续使用原生模型、认证、权限与 Hook 信任配置。Claude 的本次受管调用仅挂接当前任务的 MCP，授权该 Rail 只读工具集。参见 [Codex CLI](https://learn.chatgpt.com/docs/developer-commands?surface=cli) 和 [Claude Code CLI](https://code.claude.com/docs/en/cli-reference)。
+
 ## 任务包与冷页
 
 原有 MCP 原文工具继续可用，新增 `context.packet`：

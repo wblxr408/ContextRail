@@ -19,7 +19,7 @@ from .store import Store
 
 PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "bridge-import", "bridge-packet",
                     "bridge-receipt", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
-                    "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
+                    "client-prepare", "client-continue", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "index-recover", "backup-create", "result-search",
                     "web-cache-store", "web-cache-get",
                     "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
@@ -344,6 +344,16 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--native-memory-client", choices=("codex", "claude"), action="append", default=[])
             sub.add_argument('--query-binding',type=Path)
             sub.add_argument('--context-assistance',action='store_true',help='Enable exact compact recovery and optional file history on supported main-session hooks')
+        elif command == "client-continue":
+            sub.add_argument("--registry", type=Path, required=True)
+            sub.add_argument("--snapshot", required=True)
+            sub.add_argument("--client", choices=("codex", "claude"), required=True)
+            sub.add_argument("--client-command", type=Path, help="Trusted local JSON argv for the native executable")
+            sub.add_argument("--input", type=Path, help="UTF-8 user input file; defaults to stdin")
+            sub.add_argument("--timeout", type=int, default=180)
+            sub.add_argument("--source-client", choices=("codex", "claude"))
+            sub.add_argument("--source-native-session")
+            sub.add_argument("--history-binding", type=Path, help="Trusted task/workspace source selection")
         elif command in ("host-hook", "client-toggle"):
             sub.add_argument("--registry", type=Path, required=True)
             sub.add_argument("--client", choices=("codex", "claude"), required=True)
@@ -728,6 +738,9 @@ def project_command(args):
             result = OutputRecorder(store, config.scope, Lease(args.session, args.epoch), config.workspace, ignore=config.ignore).capture(
                 data, budget=config.response_bytes, intent=args.intent)
             print(canonical(result))
+        elif args.command == "client-continue":
+            from .managed_client import continue_client
+            return continue_client(store, config, args, sys.stdin.buffer, sys.stdout.buffer, sys.stderr.buffer)
         elif args.command == "client-prepare":
             from .native_clients import prepare_clients
             result = prepare_clients(store, config, Lease(args.session, args.epoch), args.snapshot, args.output,
@@ -897,7 +910,9 @@ def main(argv: list[str] | None = None) -> int:
             from .maintenance import restore_backup
             print(canonical(restore_backup(args.backup, args.output)))
         elif args.command in PROJECT_COMMANDS:
-            project_command(args)
+            exit_code = project_command(args)
+            if exit_code is not None:
+                return exit_code
         else:
             scope = Scope(args.tenant, args.project, args.branch, args.task)
             if args.command == "serve" and not args.store.is_file():

@@ -82,9 +82,15 @@ def prompt(data):
             "Do not infer either value from this prompt; retrieve both from the tools.")
 
 
-def run_client(client, output, data, expected):
+def run_client(client, output, data, expected, *, managed=False, source=None):
     profile = data["layout"]["clients"][client]
-    if client == "codex":
+    if managed:
+        args = [sys.executable, "-m", "contextrail", "client-continue", "--workspace", data["workspace"],
+                "--task", data["scope"]["task"], "--session", "owner", "--registry", data["layout"]["registry"],
+                "--snapshot", data["snapshot"], "--client", client, "--timeout", "170"]
+        if source:
+            args += ["--source-client", source["client"], "--source-native-session", source["native_session"]]
+    elif client == "codex":
         server = tomllib.loads(Path(profile["mcp_config"]).read_text(encoding="utf-8"))["mcp_servers"]["contextrail"]
         args = [shutil.which("codex.exe") or "codex", "exec", "--ephemeral", "--json", "--skip-git-repo-check",
                 "--sandbox", "read-only", "-C", data["workspace"], "--color", "never",
@@ -102,7 +108,8 @@ def run_client(client, output, data, expected):
         "hook_trust_bypass": False}), encoding="utf-8")
     start = time.monotonic()
     try:
-        process = run_local(args, cwd=data["workspace"], input=prompt(data).encode("utf-8"), timeout=180)
+        cwd = SOURCE if managed else data["workspace"]
+        process = run_local(args, cwd=cwd, input=prompt(data).encode("utf-8"), timeout=180)
         stdout, stderr = process.stdout, process.stderr
         returncode, timed_out = process.returncode, False
     except subprocess.TimeoutExpired as exc:
@@ -150,7 +157,11 @@ def run_client(client, output, data, expected):
                 inspect_content(block.get("content"))
     result = None
     try:
-        if client == "codex":
+        if client == "codex" and managed:
+            final = next(event["item"]["text"] for event in reversed(events)
+                         if event.get("item", {}).get("type") == "agent_message")
+            result = json.loads(final.strip().removeprefix("```json").removesuffix("```"))
+        elif client == "codex":
             result = json.loads((output / "codex-final.json").read_bytes())
         else:
             final = next(event for event in reversed(events) if event.get("type") == "result")
@@ -167,12 +178,21 @@ def run_client(client, output, data, expected):
         "packet_wire_exact": packet_read_exact, "cold_wire_exact": cold_read_exact,
         "retrieval_passed": returncode == 0 and packet_read_exact and cold_read_exact and packet_called and get_called,
         "native_session": native_session,
-        "hook_activation": "not_changed_requires_native_review" if client == "codex" else "explicit_settings_invocation"}
+        "hook_activation": ("existing_native_configuration" if managed else
+                            "not_changed_requires_native_review" if client == "codex" else "explicit_settings_invocation")}
     with Store(data["store"]) as store:
         from contextrail.models import Scope
         receipts = [row["metadata"] for row in store.events(Scope(**data["scope"])) if row["kind"] == "native_context.prepared"
                     and row["metadata"].get("native_session") == native_session and row["metadata"].get("client") == client]
         summary["hook_preparation_receipts"] = receipts
+        if managed:
+            attempts = [row["metadata"] for row in store.events(Scope(**data["scope"]))
+                        if row["kind"] == "native_managed.finished" and row["metadata"]["client"] == client]
+            summary["managed_receipt"] = attempts[-1] if attempts else None
+            if attempts and attempts[-1]["state"] == "timed_out":
+                summary["timed_out"] = True
+            summary["rate_limited"] = any(b"429" in line and (b"rate" in line.lower() or b"api error" in line.lower())
+                                          for line in (stdout + b"\n" + stderr).splitlines())
     (output / (client + "-summary.json")).write_text(canonical(summary), encoding="utf-8")
     print(canonical(summary), flush=True)
     return summary
@@ -199,6 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--client", action="append", choices=("codex", "claude"))
     parser.add_argument("--existing-fixture", action="store_true")
+    parser.add_argument("--managed", action="store_true", help="Use the explicit client-continue entry")
     args = parser.parse_args()
     output = args.output.resolve()
     if args.existing_fixture:
@@ -207,7 +228,11 @@ if __name__ == "__main__":
     else:
         data, expected = fixture(output)
     print(canonical({"fixture": str(output), "snapshot": data["snapshot"]}), flush=True)
-    if not args.existing_fixture:
+    if not args.existing_fixture and not args.managed:
         live_memory(output, data)
+    source = None
     for client in args.client or ("codex", "claude"):
-        run_client(client, output, data, expected)
+        result = run_client(client, output, data, expected, managed=args.managed,
+                            source=source if source and source["client"] != client else None)
+        if result["native_session"]:
+            source = result
