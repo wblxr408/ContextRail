@@ -52,6 +52,15 @@ class ContextTools:
         if name=='context.efficiency':
             from .accounting import efficiency
             return efficiency(**arguments)
+        if name == "context.offline_brief":
+            from .offline import offline_brief
+            self._keys(arguments, required={"snapshot"}, optional={
+                "budget", "requested", "offset", "limit", "trace_offset", "trace_limit", "queue_offset", "queue_limit"})
+            options = dict(arguments)
+            budget = options.pop("budget", min(16384, self.max_read_bytes))
+            offset = options.pop("queue_offset", 0)
+            limit = options.pop("queue_limit", 10)
+            return offline_brief(self, options, budget=budget, queue_offset=offset, queue_limit=limit)
         if name in {'context.brief','context.explain'}:
             from .context import Compiler
             import json
@@ -201,6 +210,14 @@ class ContextTools:
     @staticmethod
     def definitions() -> list[dict]:
         return [
+            {"name": "context.offline_brief", "description": "Read the exact task brief and original pending learning jobs through local storage only.",
+             "input_schema": {"type": "object", "properties": {
+                 "snapshot": {"type": "string"}, "budget": {"type": "integer", "minimum": 1},
+                 "requested": {"type": "array", "items": {"type": "object"}, "maxItems": 100},
+                 "offset": {"type": "integer", "minimum": 0}, "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                 "trace_offset": {"type": "integer", "minimum": 0}, "trace_limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                 "queue_offset": {"type": "integer", "minimum": 0}, "queue_limit": {"type": "integer", "minimum": 1, "maximum": 50}},
+                 "required": ["snapshot"], "additionalProperties": False}},
             {"name": "context.web_cache", "description": "Read a task-bound web observation by source and URL, with freshness and original body references. Does not fetch or write.",
              "input_schema": {"type": "object", "properties": {"source": {"type": "string"}, "url": {"type": "string"},
                  "refresh": {"type": "boolean"}, "budget": {"type": "integer", "minimum": 1}},

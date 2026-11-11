@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 56/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 58/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -65,3 +65,9 @@ Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文
 检索保留路径、中文短词和标识符的原文 Ref，前缀与拼写候选单独展示。既有索引可继续查询，显式重建后常驻查询重新读取。网页缓存按任务、可信来源及 URL 存储有版本的观察，明确过期、刷新和 HTTP 重验证。Windows 本地 10 项集中验收和 wheel 构建通过，HTTP 链路使用实际回环服务器。见 [查询与网页缓存用法](QUERY_USE.md)。
 
 交付分支 `codex/retrieval-web-evidence`。
+
+## 第十一模块 G06 / I04
+
+离线简报从精确快照保留需求、事件、动作和原文 Ref，原学习队列可只读翻页。书签固定工作树内任务与快照，可保存搜索并在 PowerShell 补全。Windows 本地 8 项集中验收和 wheel 构建通过，包含原记忆运行时显式记事、Bridge 来源校验及中文 Tab 补全。另只读验证了实际工作区的原记忆队列。见 [离线简报与任务书签](BRIDGE_USE.md#离线简报与任务书签)。
+
+交付分支 `codex/offline-task-navigation`。

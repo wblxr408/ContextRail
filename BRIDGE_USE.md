@@ -91,3 +91,35 @@ status 显示当前任务目标/约束/验收与快照数量。checkpoints 按�
 可直接复制 argv 执行，或复制已逐项转义的 PowerShell 字面量命令。continue/explain 不接受缺失 snapshot，不创建聊天、不激活交接、不改变 owner/epoch；旧版本和其他 task 的快照明确拒绝。search 复用当前 scope 的字面搜索，历史来源仍按具体 Ref 回读。
 
 search 显式返回 historical_exports_may_match=true、source_current=not_checked；命中历史导出不能据此宣称它是当前 Bridge 要求，当前要求需通过指定 snapshot 的 continue/explain 核对。
+
+## 离线简报与任务书签
+
+模型额度用尽时，用精确的 Rail snapshot 生成离线简报。返回任务目标、约束、验收、必读原文、事件与动作目录，以及其他原文的 Ref。仍按原 Bridge 规则核对文件来源。`--state-output` 将同一结果写入新的 UTF-8 STATE 文件。
+
+```powershell
+contextrail brief --workspace D:/ContextRail --task demo-task --session local-host --snapshot '<Rail-snapshot-ID>' --offline --state-output STATE.md
+contextrail batch-read --workspace D:/ContextRail --task demo-task --session local-host --calls read-refs.json
+```
+
+`read-refs.json` 使用现有批量回读格式。将简报中需要核对的 Ref 放进 `arguments`。
+
+```json
+[{"id":"original","tool":"context.get","arguments":{"name":"requirements","revision":1}}]
+```
+
+加 `--query-binding <可信绑定文件>` 时，从原记忆库只读列出这个工作区的待处理项、尝试次数和已知重试时间。可用 `--queue-offset` 和 `--queue-limit` 翻页。队列库读不到时，任务简报仍返回，队列状态为 `unavailable`，待处理数为 `null`。后续处理由原队列接续。MCP 使用相同的 `context.offline_brief`，从启动时绑定的来源读取。明确要记录的用户文字仍可通过 [原记忆服务的无模型记事入口](CLAUDE_MEM_STAGE1_USE.md#无模型显式记事) 保存。
+
+任务书签固定工作树内的任务、任务版本和精确 snapshot。可附一条常用搜索，打开时在这个任务内执行。列表按最近打开排序，显示原任务身份，且只列当前 session 可读的任务。快照过期或 Bridge 原件变化时，打开会返回错误；需要改指向时，由原任务所有者移除旧书签后重新保存。
+
+```powershell
+contextrail bookmark-set --workspace D:/ContextRail --task demo-task --session local-host --epoch 0 --name '圆锥' --snapshot '<Rail-snapshot-ID>' --query '圆锥曲线'
+contextrail bookmark-open --workspace D:/ContextRail --session local-host --name '圆锥'
+contextrail bookmark-list --workspace D:/ContextRail --session local-host
+contextrail bookmark-remove --workspace D:/ContextRail --task demo-task --session local-host --epoch 0 --name '圆锥'
+```
+
+已在 PATH 上安装 `contextrail` 时，可在 PowerShell 当前会话运行仓库的 `Enable-ContextRailCompletion.ps1`。之后在 `contextrail bookmark-open --name ` 或 `bookmark-remove --name ` 后按 Tab。用 `-Python` 选择装有 ContextRail 的解释器。
+
+```powershell
+& D:/ContextRail/Enable-ContextRailCompletion.ps1 -Workspace D:/ContextRail -Session local-host -Python D:/ContextRail/.venv/Scripts/python.exe
+```

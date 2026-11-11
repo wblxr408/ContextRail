@@ -21,6 +21,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "index-recover", "backup-create", "result-search",
                     "web-cache-store", "web-cache-get",
+                    "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history")
 
@@ -112,7 +113,7 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--context-bytes", type=int)
         if command in ("project-info", "client-prepare"):
             sub.add_argument("--hook-bytes", type=int)
-        if command in {'mcp','query','status','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
+        if command in {'mcp','query','status','brief','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
         if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history", "index-recover", "backup-create"):
             sub.add_argument("--session", required=True)
         if command in ("backup-create", "index-recover"):
@@ -250,6 +251,21 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--offset", type=int, default=0)
         elif command == "index-rebuild":
             sub.add_argument("--epoch", type=int, required=True)
+        elif command.startswith("bookmark-"):
+            if command == "bookmark-list":
+                sub.add_argument("--prefix", default="")
+                sub.add_argument("--offset", type=int, default=0)
+                sub.add_argument("--limit", type=int, default=20)
+                sub.add_argument("--completion", action="store_true", help="Output only visible bookmark names as ASCII JSON")
+            else:
+                sub.add_argument("--name", required=True)
+            if command in {"bookmark-set", "bookmark-remove"}:
+                sub.add_argument("--epoch", required=True, type=int)
+            if command == "bookmark-set":
+                sub.add_argument("--snapshot", required=True)
+                sub.add_argument("--query", help="Optional saved search in the pinned task")
+            if command == "bookmark-open":
+                sub.add_argument("--budget", type=int)
         elif command in ("continue", "explain", "brief"):
             sub.add_argument("--snapshot", required=True)
             sub.add_argument("--budget", type=int)
@@ -260,6 +276,10 @@ def parser() -> argparse.ArgumentParser:
                 sub.add_argument('--trace-limit',type=int,default=5)
                 sub.add_argument('--requested',default='[]',help='JSON exact requested refs')
                 sub.add_argument('--state-output',type=Path,help='Explicit new STATE file; refuses overwrite')
+            if command == "brief":
+                sub.add_argument("--offline", action="store_true", help="Include the existing queue using only local reads")
+                sub.add_argument("--queue-offset", type=int, default=0)
+                sub.add_argument("--queue-limit", type=int, default=10)
         elif command == "client-prepare":
             sub.add_argument("--epoch", type=int, required=True)
             sub.add_argument("--snapshot", required=True)
@@ -549,8 +569,14 @@ def project_command(args):
         elif args.command in ('brief','explain'):
             try:requested=json.loads(args.requested)
             except ValueError:raise InvalidRequest('Requested refs must be JSON') from None
-            output=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes).call('context.'+args.command,
-                {'snapshot':args.snapshot,'budget':packet_budget,'offset':args.offset,'limit':args.limit,'trace_offset':args.trace_offset,'trace_limit':args.trace_limit,'requested':requested})
+            tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes, query_binding=query_binding)
+            options = {'snapshot':args.snapshot,'budget':packet_budget,'offset':args.offset,'limit':args.limit,
+                       'trace_offset':args.trace_offset,'trace_limit':args.trace_limit,'requested':requested}
+            if getattr(args, 'offline', False):
+                options.update(queue_offset=args.queue_offset, queue_limit=args.queue_limit)
+                output = tools.call("context.offline_brief", options)
+            else:
+                output = tools.call("context." + args.command, options)
             if args.state_output:
                 from .layered import export_state
                 export_state(output,args.state_output)
@@ -603,6 +629,21 @@ def project_command(args):
                 except (OSError,ValueError):raise InvalidRequest('History navigation requires bounded JSON options') from None
             reader=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
             print(canonical(reader.call('context.'+args.command.replace('-','_'),options)))
+        elif args.command.startswith("bookmark-"):
+            from .bookmarks import Bookmarks
+            bookmarks = Bookmarks(store, config, args.session)
+            if args.command == "bookmark-set":
+                output = bookmarks.set(args.name, args.snapshot, Lease(args.session, args.epoch), args.query)
+            elif args.command == "bookmark-open":
+                output = bookmarks.open(args.name, budget=packet_budget)
+            elif args.command == "bookmark-remove":
+                output = bookmarks.remove(args.name, Lease(args.session, args.epoch))
+            else:
+                output = bookmarks.list(prefix=args.prefix, offset=args.offset, limit=args.limit, budget=config.response_bytes)
+                if args.completion:
+                    print(json.dumps([entry["name"] for entry in output["entries"]], ensure_ascii=True))
+                    return
+            print(canonical(output))
         elif args.command in ("status", "checkpoints", "search", "continue"):
             from .navigation import TaskNavigation
             navigation = TaskNavigation(store, config, args.session)

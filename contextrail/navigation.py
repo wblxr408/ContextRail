@@ -16,12 +16,16 @@ class TaskNavigation:
         self.store, self.config, self.scope, self.session = store, config, config.scope, session
         store.session(self.scope, session)
 
-    def _resume(self, sid):
+    def _resume(self, sid, *, budget=None):
         argv = [sys.executable, "-m", "contextrail", "continue", "--workspace", str(self.config.workspace),
-                "--store", str(self.config.store), "--project-id", self.scope.project, "--task", self.scope.task,
+                "--store", str(self.config.store), "--project-id", self.scope.project, "--tenant", self.scope.tenant, "--task", self.scope.task,
                 "--session", self.session, "--snapshot", sid]
         if self.config.config:
             argv += ["--config", str(self.config.config)]
+        if self.config.defaults and self.config.defaults_explicit:
+            argv += ["--defaults", str(self.config.defaults)]
+        if budget is not None:
+            argv += ["--budget", str(budget)]
         return {"argv": argv, "powershell": "& " + " ".join("'" + arg.replace("'", "''") + "'" for arg in argv)}
 
     def _source(self, sid):
@@ -86,4 +90,4 @@ class TaskNavigation:
             packet = Compiler(self.store).compile(self.scope, sid, self.session, budget=budget, index=IndexPolicy(max_entries=5))
             result = {"snapshot": sid, "context": json.loads(packet.body), "units": packet.units,
                       "unit": packet.unit, "budget": packet.budget}
-        return {**result, "resume": self._resume(sid)}
+        return {**result, "resume": self._resume(sid, budget=budget)}
