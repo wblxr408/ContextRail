@@ -25,7 +25,8 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history",
-                    "experience-review", "experience-reject", "read-heat", "document-import", "material-get")
+                    "experience-review", "experience-reject", "read-heat", "document-import", "material-get",
+                    "memory-consolidation", "experience-rule-draft")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -154,7 +155,11 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--ref", required=True, help="Exact material Ref from the query result as JSON")
             sub.add_argument("--start", type=int, default=0)
             sub.add_argument("--end", type=int)
-        elif command in {"experience-review", "experience-reject"}:
+        elif command == "memory-consolidation":
+            sub.add_argument("--query-binding", type=Path, required=True)
+            sub.add_argument("--input", type=Path, help="Bounded review request JSON, or stdin")
+            sub.add_argument("--epoch", type=int, help="Current owner lease epoch for applying or undoing grouping")
+        elif command in {"experience-review", "experience-reject", "experience-rule-draft"}:
             sub.add_argument("--query-binding", type=Path, required=True,
                              help="Trusted workspace and exact native-session selection")
             sub.add_argument("--since", help="Inclusive source time with explicit time zone")
@@ -163,11 +168,17 @@ def parser() -> argparse.ArgumentParser:
                 sub.add_argument("--reconsider", help="Show this explicitly requested candidate again")
                 sub.add_argument("--offset", type=int, default=0)
                 sub.add_argument("--limit", type=int, default=20)
-            else:
+            elif command == "experience-reject":
                 sub.add_argument("--epoch", type=int, required=True)
                 sub.add_argument("--candidate", required=True)
                 sub.add_argument("--evidence-version", required=True)
                 sub.add_argument("--reason", required=True)
+            else:
+                sub.add_argument("--candidate", required=True)
+                sub.add_argument("--evidence-version", required=True)
+                sub.add_argument("--target", default="AGENTS.md")
+                sub.add_argument("--rule", required=True, help="A short proposed rule for human review")
+                sub.add_argument("--reconsider", action="store_true")
         elif command=='metrics':
             sub.add_argument('--offset',type=int,default=0)
             sub.add_argument('--limit',type=int,default=20)
@@ -469,6 +480,54 @@ def project_command(args):
             print(canonical(tools.call("context.material_get", {
                 "ref": ref, "start": args.start, "end": args.end,
                 "budget": min(config.read_bytes, config.response_bytes)})))
+        elif args.command == "memory-consolidation":
+            import time
+            from contextlib import nullcontext
+            from .errors import Unavailable
+            from .query_sources import ExistingMemory, SourceFailure
+
+            try:
+                with (args.input.open("rb") if args.input else nullcontext(sys.stdin.buffer)) as stream:
+                    raw = stream.read(16385)
+                if len(raw) > 16384:
+                    raise ValueError()
+                request = json.loads(raw)
+                allowed = {"action", "identifiers", "query", "group_id", "revision", "representative", "identifier",
+                           "note_version", "start_line", "limit"}
+                if not isinstance(request, dict) or request.keys() - allowed:
+                    raise ValueError()
+                if request.get("action", "review") not in ("review", "apply", "undo", "open"):
+                    raise ValueError()
+            except (OSError, ValueError, RecursionError):
+                raise InvalidRequest("Provide a bounded consolidation request object.") from None
+            if query_binding is None or query_binding.memory_home is None:
+                raise InvalidRequest("Consolidation requires the trusted original memory binding.")
+            writes = request.get("action") in ("apply", "undo")
+            if writes and args.epoch is None:
+                raise InvalidRequest("Applying or undoing consolidation requires the current owner epoch.")
+            budget = min(config.read_bytes, config.response_bytes)
+            if not 2048 <= budget <= 65536:
+                raise InvalidRequest("Consolidation needs a response budget between 2048 and 65536 bytes.")
+            with store.transaction() if writes else nullcontext():
+                if writes:
+                    store._lease(config.scope, Lease(args.session, args.epoch))
+                else:
+                    store.session(config.scope, args.session)
+                try:
+                    output = ExistingMemory(query_binding).invoke(
+                        "consolidation", [], {**request, "scope": query_binding.workspace, "budget": budget},
+                        time.monotonic() + query_binding.timeout_seconds)
+                except SourceFailure:
+                    raise Unavailable("The original memory service could not complete consolidation.") from None
+            print(canonical(output))
+        elif args.command == "experience-rule-draft":
+            from .rule_draft import rule_draft
+
+            store.session(config.scope, args.session)
+            print(canonical(rule_draft(query_binding, args.candidate, args.evidence_version,
+                                       args.target, args.rule, since=args.since, until=args.until,
+                                       reconsider=args.reconsider,
+                                       budget=min(config.read_bytes, config.response_bytes))))
         elif args.command in {"experience-review", "experience-reject"}:
             from .experience import reject_experience, review_experiences
             window = {"since": args.since, "until": args.until}

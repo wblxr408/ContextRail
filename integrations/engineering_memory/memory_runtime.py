@@ -619,6 +619,15 @@ class MemoryRuntime:
                     'total':len(entries), 'offset':offset, 'next_offset':offset+limit if offset+limit<len(entries) else None,
                     'basis':'explicit_markdown_relations'}
 
+    def consolidation(self, **options):
+        try:
+            from note_consolidation import consolidation
+        except ModuleNotFoundError as exc:
+            if exc.name != "note_consolidation":
+                raise
+            from contextrail.note_consolidation import consolidation
+        return consolidation(self, **options)
+
     def _excerpt(self,note, terms):
         if note['permalink'] in self._passages:
             start=max(0,self._passages[note['permalink']]-150)

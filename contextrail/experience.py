@@ -256,6 +256,31 @@ def _decisions(db, workspace, candidate, reconsider):
     return ("new_evidence" if missing else "suppressed"), _decision(latest), sorted(missing)
 
 
+def experience_for_rule(binding, candidate_id, evidence_version, *, since=None, until=None,
+                        reconsider=False):
+    since, until = _window(binding, since, until)
+    identifier(candidate_id)
+    identifier(evidence_version)
+    deadline = time.monotonic() + binding.timeout_seconds
+    try:
+        with closing(connect_events(binding, deadline)) as db:
+            candidates, _ = _candidates(db, binding, since, until)
+            candidate = next((item for item in candidates if item["id"] == candidate_id), None)
+            if candidate is None or candidate["evidence_version"] != evidence_version:
+                raise Conflict("Experience evidence changed. Review the current candidate before drafting.")
+            exists = db.execute("""SELECT 1 FROM sqlite_master
+                WHERE type='table' AND name='experience_rejections'""").fetchone()
+            reason, previous, new_ids = (
+                _decisions(db, workspace_key(binding.workspace), candidate, candidate_id if reconsider else None)
+                if exists else ("first_review", None, []))
+            if reason == "suppressed":
+                raise Conflict("This evidence was rejected. Explicitly reconsider it before drafting.")
+            return {**candidate, "review_reason": reason, "last_rejection": previous,
+                    "new_evidence_event_ids": new_ids, "window": {"since": since, "until": until}}
+    except (sqlite3.Error, SourceFailure):
+        raise Unavailable("The bound experience evidence could not be read.") from None
+
+
 def review_experiences(binding, *, since=None, until=None, reconsider=None,
                        offset=0, limit=20, budget=65536):
     since, until = _window(binding, since, until)

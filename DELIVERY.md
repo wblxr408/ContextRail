@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 64/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 66/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -101,3 +101,11 @@ PDF、DOCX、XLSX 与 PPTX 通过原来源账本及学习队列显式导入。�
 Windows 本机 4 项集中验收和 wheel 构建通过。旧记忆入口在隔离部署中验证了重复导入和新版回读。新增解析器为可选依赖，PDF 范围为文字层。见 [资料导入与回读](QUERY_USE.md#导入本地资料并回读原生记忆)。
 
 交付分支 `codex/document-native-memory`。
+
+## 第十六模块 I06 / I07
+
+原记忆服务提供近重复候选、原件差异和版本回读。确认后折叠展示并可撤销，数值、用户纠正和声明关系有精确出处。项目规则差异稿引用选定经验版本，展示疑似冲突并生成反向补丁。两种审阅结果保留为派生数据。
+
+Windows 本机 4 项集中验收和 wheel 构建通过。通过实际回环 RPC 核对笔记分组与版本变化，在副本实际应用正向及反向补丁。隔离部署验证折叠决定在重开原库后仍可读并可撤销。实际共享服务接线使用原部署流程。见 [整理与规则草稿](QUERY_USE.md#可逆整理近重复笔记)。
+
+交付分支 `codex/reversible-memory-review`。

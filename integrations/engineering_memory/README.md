@@ -19,3 +19,5 @@ C06/C08/H01作为一个阶段部署：memory_runtime.py提供原目录query_revi
 F05–F08作为一个阶段接入capture_rules.py、ingest_delivery.py、stream_cursor.py和原listener/history_import。原库新增delivery/control/源代/别名，原循环有限drain和共享退避；CLI提供交付、取消与内容无关状态。learning_origin v2排除新管理页。使用与观察限制见[阶段指南](../../CAPTURE_DELIVERY_USE.md)。
 
 G08 的 Rail 前台 `document-import` 直接使用原 `state.sqlite` 的来源与学习队列。既有 `history_import.import_document` 在部署本适配源码并为该环境安装可选解析器后，也接受 PDF、DOCX、XLSX 和 PPTX。两个入口共用结构化版本身份。完整提取回执通过 Rail 前台读取。见 [资料导入与回读](../../QUERY_USE.md#导入本地资料并回读原生记忆)。
+
+I06 的 `consolidation` 通过同一个资源服务提供候选、版本回读和折叠决定。决定存入原 `state.sqlite`，原 Markdown 继续作为来源。部署包含 I07 草稿与整理报告的派生来源识别。见 [可逆整理与规则草稿](../../QUERY_USE.md#可逆整理近重复笔记)。

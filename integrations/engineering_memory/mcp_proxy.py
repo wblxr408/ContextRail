@@ -19,7 +19,7 @@ class Adapter:
     def request(self,message):
         if message.get('method')=='engineering/runtime':
             params=message.get('params',{});name=params.get('name')
-            if name not in {'recall','notes','observations','relations','retain','reflect','page','judge','query_revision'}:
+            if name not in {'recall','notes','observations','relations','retain','reflect','page','judge','query_revision','consolidation'}:
                 raise ValueError('Unsupported shared memory operation')
             args=params.get('args',[]);kwargs=params.get('kwargs',{})
             if name=='judge':

@@ -26,6 +26,7 @@ def deploy(home):
     changes['fidelity.py']=(root/'contextrail/fidelity.py').read_text(encoding='utf-8')
     changes['derived_pages.py']=(root/'contextrail/derived_pages.py').read_text(encoding='utf-8')
     changes['document_extract.py']=(root/'contextrail/document_extract.py').read_text(encoding='utf-8')
+    changes['note_consolidation.py']=(root/'contextrail/note_consolidation.py').read_text(encoding='utf-8')
     changes['rail_errors.py']=(root/'contextrail/errors.py').read_text(encoding='utf-8')
     document=(root/'contextrail/document_memory.py').read_text(encoding='utf-8')
     for local,remote in (('.capture_policy','capture_policy'),('.capture_rules','capture_rules'),

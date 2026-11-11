@@ -164,3 +164,30 @@ contextrail material-get --workspace D:/ContextRail --task my-task --session own
 资料回读取原记忆库的脱敏提取版本，原文件后来更新也能打开旧版。原生记忆只读绑定中的精确 Markdown 文件，最多绑定 8 个文件，每个文件最多读取 512 KiB 并检索前 5000 行。来源标记为 `client_auto_memory`，不入学习队列。文件变化时，旧 Ref 会提示重新查询。回读可用 `start`、`end` 指定处理后文本的 UTF-8 字节范围。资料检索最多扫描工作区最近存档的 48 个版本，超限会显示覆盖缺口，仍可用旧 Ref 直接回读。
 
 设计参考了 ai-memory 的本地文档提取和 context-mode 的原生记忆检索。宿主绑定控制本项目的读取范围。 [ai-memory 文档导入](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/companions/ai-memory-importer/src/document.rs) · [context-mode 原生记忆查询](https://github.com/mksglu/context-mode/blob/a92cf6a77ac02971fb5fafe2155e5ee229491884/src/search/auto-memory.ts)
+
+## 可逆整理近重复笔记
+
+在可信绑定中指定原 `memory_home`。既有记忆服务应用本版适配后，`memory-consolidation` 可审阅同一工作区的 Basic Memory 笔记。请求可选 2–12 个精确标识，也可给一个查询以文本重合度挑选至多 12 个候选。
+
+```powershell
+'{"identifiers":["main/first-note","main/second-note"]}' |
+    contextrail memory-consolidation --workspace D:/ContextRail --task my-task --session owner --query-binding D:/path/sources.json --response-bytes 32768
+```
+
+候选组要求成员两两相似。结果保留各成员的精确版本、独有行、原件引用和声明的关系。差异或关系超出展示预算时会给出省略数量。用 `{"action":"open","identifier":"main/second-note","note_version":"<version>"}` 回读同一版本，可用 `start_line` 和 `limit` 翻页。
+
+确认后提交 `action: apply`、同一来源选择、`group_id` 与 `revision`，并传入当前所有者的 `--epoch`。可用 `representative` 选择组内任一成员。审阅视图中的折叠项仍标出冲突关系和差异数。原笔记与原关系继续保存。来源变化会展开已失效的组。提交 `action: undo` 加原组 ID 与版本即可撤销折叠，即使来源已经变化也可以撤销旧决定。
+
+相似候选和折叠仅供审阅。默认召回继续按原笔记返回。聚类思路参考了 ai-memory 的整理设计。 [ai-memory 整理机制](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/crates/ai-memory-store/src/decay.rs)
+
+## 从经验生成项目规则差异稿
+
+先在 `experience-review` 中选择跨会话候选，再以同一绑定和时间范围提交其 ID、证据版本及一条拟写入的规则。目标可以是项目内已有的 `AGENTS.md`、`CLAUDE.md` 或 `SKILL.md`。
+
+```powershell
+contextrail experience-rule-draft --workspace D:/ContextRail --task my-task --session owner --query-binding D:/path/sources.json --candidate <id> --evidence-version <version> --target AGENTS.md --rule "构建前核对工作树和当前分支。" --response-bytes 16384
+```
+
+输出包含独立会话证据、目标路径、疑似冲突及其行号、`diff` 和 `reverse_diff`。冲突提示来自目标与上层项目规则的文本重合，需要人工判断。已否决的证据要用 `--reconsider` 显式重看，草稿会保留上次否决理由。证据版本变化时需重新审阅。
+
+规则草稿由用户审阅后自行采用。采用后可对同一变更使用反向补丁撤销。原学习入口识别规则稿与整理报告为派生视图，保持证据和执行规则的独立性。参考来源是 ai-memory 的设计提案。 [规则提升设计](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/docs/design-rules-promotion.md)
