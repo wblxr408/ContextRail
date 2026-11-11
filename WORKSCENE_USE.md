@@ -1,4 +1,4 @@
-# 工作现场与在途动作（E02 / E03 / B08）
+# 工作现场、在途动作与错误恢复
 
 继续使用原 M 捕获、R task_state/actions 和 Bridge STATE。宿主实际执行命令；此模块不执行命令、不自动重跑，也没有新增默认监听器或后台执行服务。
 
@@ -58,3 +58,16 @@ CLI复用原项目配置与会话：`contextrail workscene --operation read --se
 导出的STATE使用原context_state_projection frontmatter并绑定真实R快照；工作现场JSON与候选schema接入原learning-origin v3过滤，避免把自己的恢复材料再次当新经验学习。显式新用户回复仍由原投影规则单独保留。操作日志在任务状态中只保留一个有来源的working_scene导航，其余按只读入口回读；大元数据截短带projection_loss，原来源不丢。
 
 实现/验证与当前边界见 openspec/changes/recoverable-workscene/verification.md。原生Hook命令和信任设置未改变；现有MCP连接正常重连/新会话后可发现新增只读工具。
+
+## 错误处理与验证记录（E04）
+
+新导入的原生调用结果和新保存的宿主结果会进入同一个按来源绑定的错误记录。用 `context.error_history` 按 `category` 或 `case_id` 查找失败和原 Ref。结果保留错误分类、处理声明、绑定验证、相似命令或文件的候选结果，以及分开的处理分页。`case_id` 可用列表返回的值。
+
+```powershell
+contextrail workscene --workspace . --session <reader> --operation error-history --input errors.json
+contextrail workscene --workspace . --session <owner> --epoch <epoch> --operation attempt --input attempt.json
+```
+
+`errors.json` 可用 `{"category":"syntax_error","limit":5}`。声明处理时，`attempt.json` 需提供 `case_id`、`attempt_id`、`text`、`treatment_call`、`verification_call` 和确切来源 `source`。先绑定验证调用，再让宿主实际执行并保存结果。相邻成功保留为候选。只有绑定验证成功才标记 `verification_passed`，原问题的解决状态保持 `unconfirmed`。部分输出、超时和缺少结果保留未知。
+
+中断后可从指定客户端补读可见历史并导出 Bridge 材料。用法见 [原生历史补读](NATIVE_EVENTS_USE.md#中断后补读原生历史e07)，阶段证据见 [E04 / E07 验收](openspec/changes/causal-recovery-history/tasks.md)。

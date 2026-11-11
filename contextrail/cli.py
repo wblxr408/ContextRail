@@ -21,7 +21,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "result-search",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
-                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene")
+                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -104,7 +104,7 @@ def parser() -> argparse.ArgumentParser:
         sub.add_argument("--response-bytes", type=int)
         sub.add_argument("--read-bytes", type=int)
         if command in {'mcp','query','status','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
-        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save"):
+        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history"):
             sub.add_argument("--session", required=True)
         if command == "project-init":
             sub.add_argument("--objective", required=True)
@@ -134,8 +134,15 @@ def parser() -> argparse.ArgumentParser:
             else:
                 sub.add_argument('--offset',type=int,default=0)
                 for flag in ('native-session','file','role','origin','error-category','since','until','around'):sub.add_argument('--'+flag)
+        elif command=='native-history':
+            sub.add_argument('--memory-home',type=Path,default=Path.home()/'.codex/services/engineering-memory')
+            sub.add_argument('--client',choices=('codex','claude'),required=True)
+            sub.add_argument('--native-session',required=True)
+            sub.add_argument('--source',type=Path,help='Exact source under original enabled roots; host only')
+            sub.add_argument('--input',type=Path,help='JSON read options or {ref,start,end} for processed content')
+            sub.add_argument('--output',type=Path,help='Export managed Bridge recovery material')
         elif command=='workscene':
-            sub.add_argument('--operation',choices=('read','declare','complete','reserve','started','partial','timed-out','recover','cancel','finished','export'),default='read')
+            sub.add_argument('--operation',choices=('read','error-history','attempt','declare','complete','reserve','started','partial','timed-out','recover','cancel','finished','export'),default='read')
             sub.add_argument('--epoch',type=int)
             sub.add_argument('--input',type=Path)
         elif command == "event-import":
@@ -297,6 +304,19 @@ def parser() -> argparse.ArgumentParser:
 
 
 def project_command(args):
+    if args.command=='native-history':
+        from .native_history import NativeHistory
+        try:
+            raw=args.input.read_bytes() if args.input else b'{}'
+            if len(raw)>32768:raise ValueError()
+            data=json.loads(raw)
+            if not isinstance(data,dict):raise ValueError()
+        except (OSError,ValueError,UnicodeError):raise InvalidRequest('History input requires bounded JSON options') from None
+        reader=NativeHistory(args.memory_home,args.workspace,args.client,args.native_session,source=args.source)
+        data.setdefault('budget',args.response_bytes or 16384)
+        try:output=reader.export_state(args.output,**data) if args.output else reader.get(**data) if 'ref' in data else reader.read(**data)
+        except TypeError:raise InvalidRequest('History options are invalid') from None
+        print(canonical(output));return
     from .project import load_project
     config = load_project(args.workspace, config_path=args.config,
                           overrides={key: getattr(args, key) for key in
@@ -368,8 +388,8 @@ def project_command(args):
                 data=json.loads(raw) if raw.strip() else {}
                 if not isinstance(data,dict) or len(raw)>2*1024*1024:raise ValueError()
             except (OSError,ValueError,UnicodeError):raise InvalidRequest('Workscene input requires a bounded JSON object') from None
-            if args.operation=='read':
-                value=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes).call('context.workscene',{'budget':config.response_bytes,**data})
+            if args.operation in {'read','error-history'}:
+                value=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes).call('context.error_history' if args.operation=='error-history' else 'context.workscene',{'budget':config.response_bytes,**data})
                 print(canonical(value));return
             else:
                 if args.epoch is None:raise InvalidRequest('Host workscene operations require an explicit lease epoch')
@@ -377,6 +397,9 @@ def project_command(args):
                 if 'source' in data:
                     try:data['source']=Ref(**data['source'])
                     except (ValueError,TypeError):raise InvalidRequest('Workscene source requires an exact Ref') from None
+                if args.operation=='attempt':
+                    from .error_history import ErrorHistory
+                    scene=ErrorHistory(store,config.scope,Lease(args.session,args.epoch),config.workspace)
                 operation={'timed-out':'timed_out','export':'export_state'}.get(args.operation,args.operation)
                 try:value=getattr(scene,operation)(**data)
                 except TypeError:raise InvalidRequest('Workscene operation arguments are invalid') from None

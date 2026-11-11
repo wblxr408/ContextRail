@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施；完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 48/72，其余继续按依赖推进。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 50/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -34,6 +34,8 @@
 
 已上传模块：[d7143d47](https://github.com/wblxr408/ContextRail/commit/d7143d476b868e5f74d8c54f7e232b02936235ad)，origin/main；GitHub精确回读确认。
 
-## 下一阶段
+## 第六模块 E04 / E07
 
-继续 E04 / E07 的错误尝试链和原生中断后可见历史补读；沿用整阶段验收后提交上传的约定。
+错误处理与验证记录按来源绑定，相邻成功保留为候选。补读精确 Codex 或 Claude 会话，返回缺口、未知调用及处理版原文 Ref，并可导出 Bridge 恢复材料。Windows 实际子进程、双客户端日志及 18 项阶段用例通过。详见 [阶段验收](openspec/changes/causal-recovery-history/tasks.md)。
+
+交付分支 `codex/causal-recovery-history`。

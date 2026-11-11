@@ -67,6 +67,22 @@ class ContextTools:
             from .local_status import status
             self._keys(arguments,required=set(),optional={'snapshot','budget'})
             return status(self,**{**arguments,'budget':arguments.get('budget',min(8192,self.max_read_bytes))})
+        if name in {'context.native_history','context.native_history_get'}:
+            from .native_history import bound_reader
+            required={'client','native_session'}|({'ref'} if name.endswith('_get') else set())
+            optional={'start','end','budget'} if name.endswith('_get') else {'cursor','limit','budget','tail_bytes','follow'}
+            self._keys(arguments,required=required,optional=optional)
+            budget=arguments.get('budget',min(16384,self.max_read_bytes));integer(budget,1)
+            if budget>self.max_read_bytes:raise InvalidRequest('History budget exceeds reader limit')
+            reader=bound_reader(self,arguments['client'],arguments['native_session'])
+            args={k:v for k,v in arguments.items() if k not in {'client','native_session'}};args['budget']=budget
+            return reader.get(**args) if name.endswith('_get') else reader.read(**args)
+        if name=='context.error_history':
+            from .error_history import read
+            self._keys(arguments,required=set(),optional={'category','case_id','offset','limit','budget','attempt_offset','attempt_limit'})
+            budget=arguments.get('budget',min(8192,self.max_read_bytes));integer(budget,1)
+            if budget>self.max_read_bytes:raise InvalidRequest('Error history budget exceeds reader limit')
+            return read(self.store,self.scope,**{**arguments,'budget':budget})
         if name=='context.workscene':
             from .workscene import read
             self._keys(arguments,required=set(),optional={'offset','limit','budget','query','category','topic'})
@@ -283,6 +299,12 @@ class ContextTools:
              "input_schema":{"type":"object","properties":{"id":{"type":"string","minLength":1},
                 "offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100},
                 "budget":{"type":"integer","minimum":1}},"required":["id"],"additionalProperties":False}},
+            {"name":"context.native_history","description":"Read visible native history for an exact host-bound session after interruption. Gaps and unknown actions remain explicit; no replay of tools.",
+             "input_schema":{"type":"object","properties":{"client":{"type":"string","enum":["codex","claude"]},"native_session":{"type":"string"},"cursor":{"type":"object"},"limit":{"type":"integer","minimum":1,"maximum":100},"budget":{"type":"integer","minimum":1},"tail_bytes":{"type":"integer","minimum":0},"follow":{"type":"boolean"}},"required":["client","native_session"],"additionalProperties":False}},
+            {"name":"context.native_history_get","description":"Read a processed visible history record by exact ref and UTF-8 JSON byte range; base64 transport. Hidden reasoning/raw envelopes are never returned.",
+             "input_schema":{"type":"object","properties":{"client":{"type":"string","enum":["codex","claude"]},"native_session":{"type":"string"},"ref":{"type":"object"},"start":{"type":"integer","minimum":0},"end":{"type":"integer","minimum":0},"budget":{"type":"integer","minimum":1}},"required":["client","native_session","ref"],"additionalProperties":False}},
+            {"name":"context.error_history","description":"Read source-bound failures, declared treatments and actual verification outcomes. Similar commands/files are candidates, not proof of repair.",
+             "input_schema":{"type":"object","properties":{"category":{"type":"string"},"case_id":{"type":"string"},"attempt_offset":{"type":"integer","minimum":0},"attempt_limit":{"type":"integer","minimum":1,"maximum":20},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":100},"budget":{"type":"integer","minimum":1}},"additionalProperties":False}},
             {"name":"context.workscene","description":"Read source-linked workspace facts, task declarations and host jobs. Stored status is not current process liveness; no execution or cancellation.",
              "input_schema":{"type":"object","properties":{"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":1000},"budget":{"type":"integer","minimum":1},"query":{"type":"string","minLength":1,"maxLength":2048},"category":{"type":"string","minLength":1},"topic":{"type":"string","minLength":1}},"additionalProperties":False}},
         ]

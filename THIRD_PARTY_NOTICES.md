@@ -1,5 +1,7 @@
 # 上游适配来源
 
+E04 / E07 复用已署名的 context-mode 错误分类和调用提取。原生历史读取适配 ai-memory 固定 `1bd866375b01031d63db54862a133376598d3701` 的 [transcript.rs](https://github.com/akitaonrails/ai-memory/blob/1bd866375b01031d63db54862a133376598d3701/crates/ai-memory-workstream/src/transcript.rs) 中按会话定位和冻结读取范围的方法。Python 实现沿用本项目的可见事件归一化、策略和脱敏。MIT 许可在 `contextrail/_vendor/ai_memory_LICENSE.txt`。
+
 2026-11-01：claude-mem 固定 `b80b29bc49d08a71312f44b8feacb2e7585edff4` 的 `src/shared/owned-file-install.ts`、`atomic-json.ts`、`observer-health.ts` 和 `src/services/memory/save-memory.ts` 选定源码主体保留为 TypeScript，位于 `contextrail/_vendor/claude_mem/`。Copyright 2026 Alex Newman；Apache-2.0 完整 LICENSE/NOTICE 随该目录及 wheel 包含。逐函数来源、切片和兼容补丁见 provenance.json，使用与证据见 CLAUDE_MEM_STAGE1_USE.md。Python 只提供本项目所有权、原状态和原 M retain 适配；不引入上游 worker、Chroma、UI 或默认 observer。Node 按需短进程执行，不将研究下载视作完整上游集成。
 
 本地研究副本位于 `.context-rail/upstream/`，不作为 Python 运行依赖，也不运行其安装或后台脚本。

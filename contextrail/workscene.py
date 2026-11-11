@@ -61,6 +61,12 @@ class WorkScene:
                     text=self.store.get(self.scope,Ref(**value['stdout']['ref'])).content.decode('utf-8','replace')
                     fact.update(result_info({'output':{'exit_code':0,'stdout':text}}))
                 self._record('host:'+value['source_session']+':'+call+':'+str(index),fact['category'],'call:'+call,state,{**base,**fact},(manifest_ref,))
+            from .error_history import ErrorHistory
+            stdout=self.store.get(self.scope,Ref(**value['stdout']['ref'])).content[:65536].decode('utf-8','replace')
+            stderr=self.store.get(self.scope,Ref(**value['stderr']['ref'])).content[:65536].decode('utf-8','replace')
+            ErrorHistory(self.store,self.scope,self.lease,self.workspace).observe('host:'+value['source_session'],call,value['tool'],
+                {'argv':value['argv'],'cwd':value['cwd'],'source_paths':value['source_paths']},{'output':{'exit_code':value['exit_code'],'stdout':stdout,'stderr':stderr,'partial':value['partial'],'timed_out':value['timed_out']}},(manifest_ref,),
+                status='unknown' if value['status'] in {'partial','unknown','timed_out'} else 'succeeded' if value['status']=='succeeded' else 'no_match' if value['status']=='no_match' else 'failed')
             job=self.store.db.execute('SELECT status,owner FROM scene_jobs WHERE scope=? AND id=?',(self.scope.key,call)).fetchone()
             if job and job['owner']==self.lease.session and job['status'] not in {'succeeded','failed','cancelled'} and value['exit_code'] is not None and not value['partial'] and not value['timed_out']:
                 self.finished(call,call)
@@ -85,6 +91,8 @@ class WorkScene:
                 if calls and results:
                     source=json.loads(calls['payload']);result=json.loads(results['payload']);status=result_info(result['data'])
                     refs=(Ref(**json.loads(calls['ref'])),Ref(**json.loads(results['ref'])))
+                    from .error_history import ErrorHistory
+                    ErrorHistory(self.store,self.scope,self.lease,self.workspace).observe(session,call,source['data'].get('tool',''),source['data'].get('arguments',{}),result['data'],refs)
                     for i,fact in enumerate(call_facts(source['data'])):
                         if fact['category']=='task':continue
                         payload={**fact,'result':status,'cwd':source['workspace'],'call_id':call}
