@@ -14,6 +14,7 @@ import uuid
 
 from .context import Compiler
 from .errors import AccessDenied, BudgetExceeded, Conflict, InvalidRequest, NotFound, StaleSnapshot, Unavailable
+from .local_process import run_local
 from .models import IndexPolicy, Lease, Ref, Scope, Selection, canonical, identifier, integer
 from .store import Store
 
@@ -113,7 +114,7 @@ class BridgeValidator:
                 (home / "receipt.json").write_bytes(receipt)
                 args += ["--receipt", str(home / "receipt.json"), "--snapshot-id", bundle.ledger["snapshot_id"]]
             try:
-                completed = subprocess.run(args, capture_output=True, timeout=30)
+                completed = run_local(args, timeout=30)
             except (OSError, subprocess.TimeoutExpired):
                 raise Unavailable("Bridge authority could not complete validation.") from None
             if completed.returncode:

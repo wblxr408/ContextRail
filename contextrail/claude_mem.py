@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 from .errors import Conflict, InvalidRequest, Unavailable
+from .local_process import run_local
 
 
 def invoke(action, **payload):
@@ -14,9 +15,8 @@ def invoke(action, **payload):
         raise InvalidRequest('Upstream adapter request exceeds 16 MiB.')
     runner = Path(__file__).parent / '_vendor/claude_mem/runner.mjs'
     try:
-        completed = subprocess.run([os.environ.get('CONTEXTRAIL_NODE', 'node'), '--experimental-strip-types', str(runner)],
-            input=request, capture_output=True, timeout=15, shell=False,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+        completed = run_local([os.environ.get('CONTEXTRAIL_NODE', 'node'), '--experimental-strip-types', str(runner)],
+                              input=request, timeout=15)
         if len(completed.stdout) > 16 * 1024 * 1024:
             raise ValueError()
         response = json.loads(completed.stdout)

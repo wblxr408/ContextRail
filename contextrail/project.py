@@ -95,7 +95,7 @@ def _personal_context(defaults_path, start):
     try:
         if len(raw) > 32768:
             raise ValueError()
-        data = tomllib.loads(raw.decode("utf-8"))
+        data = tomllib.loads(raw.decode("utf-8-sig"))
     except (ValueError, UnicodeError):
         raise InvalidRequest("Personal ContextRail defaults must be valid UTF-8 TOML within 32 KiB.") from None
     context = data.get("context", {})
@@ -114,7 +114,7 @@ def load_project(start, *, config_path=None, defaults_path=None, overrides=None)
         (parent / ".contextrail.toml" for parent in (start, *start.parents)
          if (parent / ".contextrail.toml").is_file()), None)
     try:
-        data = tomllib.loads(marker.read_text(encoding="utf-8")) if marker else {}
+        data = tomllib.loads(marker.read_text(encoding="utf-8-sig")) if marker else {}
     except (OSError, ValueError) as exc:
         raise InvalidRequest("Cannot read valid project TOML.") from exc
     allowed = {"project": {"id", "tenant", "task", "workspace"}, "storage": {"path"},

@@ -51,3 +51,11 @@
 按角色在线备份 Rail、配置、已提交代码、Markdown 与可选记忆队列。恢复输出单独的审阅目录，保留快照、必读引用、动作终态与待核对动作。Rail 索引损坏时从原文重建证据 FTS 和时间线；缺失权威表或非法动作状态会拒绝恢复。Windows 本机 6 项消费者与 wheel 构建通过，队列验收使用有实际 WAL 和未提交写入的临时 SQLite 库。见 [恢复操作](SELF_USE.md#本地备份与故障恢复)。
 
 交付分支 `codex/local-maintenance-recovery`。
+
+## 第九模块 H08
+
+Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文 junction 安装配置并写入同一任务，Codex 与 Claude 配置的 Hook 和真实 MCP stdio 完成读回。批处理保留特殊字符，诊断与协议输出分离，Windows Job 清理超时、阻塞管道和遗留子进程。
+
+原生 Codex 在中文目录中完成任务包与冷页精确回读，正常退出。Claude 原生 Hook 有实际回执，模型接口返回 429，原生 MCP 回读仍待验证。H08 在 TODO 中保留开放。见 [Windows 本地调用](NATIVE_CLIENTS.md#windows-本地调用)。
+
+交付分支 `codex/windows-native-transport`。

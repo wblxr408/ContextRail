@@ -1112,6 +1112,8 @@ R 的 adapters、导入器、输出提取器等路径属于**拟新增模块**�
 
   **完成标准：** 从中文目录和 PowerShell 启动两端能读写同一任务；没有额外可见控制台或残留子进程。
 
+  **已实现与验收：** Windows 5 项集中通过。PowerShell 通过中文 junction 安装两端配置并写入工具结果，两端实际 Hook 命令记录同一任务，实际 MCP stdio 保留原文 CRLF。验证了批处理参数、stdout/stderr、占用重试、无额外控制台及进程树清理。原生 Codex 精确回读任务包与冷页并正常退出，Claude 原生 Hook 已执行，模型接口返回 429 后未完成原生 MCP 回读，保留本项待验。见 [Windows 本地调用](../NATIVE_CLIENTS.md#windows-本地调用)。
+
   **依赖：** [A06](#todo-a06)、[B08](#todo-b08)。 **源码依据：** [源 A08][SRC-A08]、[源 A10][SRC-A10]、[源 C02][SRC-C02]、[源 C14][SRC-C14]。
 
 ## I｜按实际需要启用的小扩展

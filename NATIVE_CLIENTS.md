@@ -57,6 +57,14 @@ memory-command 文件是可信本机 argv 数组，不能来自模型参数或�
 
 此命令移除 Codex 的受管条目，原有记忆 Hook 及其他配置照常使用。旧布局没有安装回执时，可通过 `client-apply --adopt-layout <旧布局目录>` 提供原生成文件，只有实际配置中唯一且精确匹配的条目才会纳入管理。
 
+## Windows 本地调用
+
+从 PowerShell 调用时，带空格或中文的路径用单引号包住。PowerShell 5 写出的带 UTF-8 BOM 的项目和个人 TOML 可以直接使用。项目 junction 别名解析到同一工作区和任务库。按 Ref 回读的原文保留 CRLF。
+
+可信记忆命令使用 JSON argv，也可指定完整路径的 `.cmd` 或 `.bat`。批处理参数可包含空格、中文及字面的 `%`、`!` 和 `&`。如果参数本身含双引号或换行，直接配置实际可执行文件或 Python 入口。记忆命令的 UTF-8 JSON 走 stdout，诊断走 stderr。Hook 返回的 stdout 仍只有原生协议数据。
+
+Windows 上，Bridge 校验器、组合记忆 Hook 和配置写入适配器在隐藏控制台的进程树中运行。超时包含 stdin 写入，超时或取消时清理其子进程；命令已结束但子进程还持有输出管道时，也会清理。切换 registry 时遇到短暂的文件占用会重试，持续占用会返回冲突并保留原配置。
+
 ## 任务包与冷页
 
 原有 MCP 原文工具继续可用，新增 `context.packet`：

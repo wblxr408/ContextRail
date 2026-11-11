@@ -12,12 +12,14 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import uuid
 
 from .bridge import BridgeEvidence
 from .errors import AccessDenied, BudgetExceeded, Conflict, InvalidRequest, RailError, Unavailable
 from .models import Lease, Scope, Target, canonical, identifier, integer, unicode_text
+from .local_process import run_local
 from .store import Store
 
 
@@ -55,7 +57,17 @@ def _write_json(path, value):
         stream.flush()
         os.fsync(stream.fileno())
     try:
-        os.replace(temporary, path)
+        delays = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32, None)
+        for delay in delays:
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError as exc:
+                if os.name != "nt" or exc.winerror not in {5, 32, 33}:
+                    raise
+                if delay is None:
+                    raise Conflict("Client registry is occupied. Release the file before changing the binding.") from None
+                time.sleep(delay)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -276,8 +288,10 @@ def _memory_hook(memory, payload):
         return {}, "not_configured"
     try:
         env = dict(os.environ, PYTHONIOENCODING="utf-8")
-        completed = subprocess.run(memory["command"], input=canonical(payload).encode("utf-8"), capture_output=True,
-                                   env=env, timeout=memory.get("timeout_seconds", 18))
+        completed = run_local(memory["command"], input=canonical(payload).encode("utf-8"),
+                              env=env, timeout=memory.get("timeout_seconds", 18))
+        if completed.stderr:
+            print(completed.stderr[:4096].decode("utf-8", errors="replace").rstrip(), file=sys.stderr)
         if completed.returncode:
             return {"systemMessage": "The existing memory hook failed; current task context is evaluated separately."}, "failed"
         if len(completed.stdout) > MAX_CONFIG:

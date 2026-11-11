@@ -8,7 +8,6 @@ output directory; stdout contains only selected acceptance results.
 import argparse
 from dataclasses import asdict
 import json
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -22,6 +21,7 @@ sys.path.insert(0, str(SOURCE))
 
 from contextrail import Lease, Ref, Store, Target
 from contextrail.bridge import BridgeEvidence
+from contextrail.local_process import run_local
 from contextrail.models import canonical
 from contextrail.native_clients import host_hook, prepare_clients
 from contextrail.project import load_project
@@ -101,19 +101,14 @@ def run_client(client, output, data, expected):
     (output / (client + "-invocation.json")).write_text(canonical({"argv": args, "model_override": False,
         "hook_trust_bypass": False}), encoding="utf-8")
     start = time.monotonic()
-    creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-    process = subprocess.Popen(args, cwd=data["workspace"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, creationflags=creationflags)
-    timed_out = False
     try:
-        stdout, stderr = process.communicate(prompt(data).encode("utf-8"), timeout=180)
-    except subprocess.TimeoutExpired:
+        process = run_local(args, cwd=data["workspace"], input=prompt(data).encode("utf-8"), timeout=180)
+        stdout, stderr = process.stdout, process.stderr
+        returncode, timed_out = process.returncode, False
+    except subprocess.TimeoutExpired as exc:
         timed_out = True
-        if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True)
-        else:
-            process.kill()
-        stdout, stderr = process.communicate()
+        returncode = None
+        stdout, stderr = exc.output or b"", exc.stderr or b""
     (output / (client + "-stdout.jsonl")).write_bytes(stdout)
     (output / (client + "-stderr.txt")).write_bytes(stderr)
     events = []
@@ -165,12 +160,12 @@ def run_client(client, output, data, expected):
     exact = result == expected
     packet_called = any(name in {"context.packet", "mcp__contextrail__context_packet", "mcp__contextrail__context.packet"} for name in tool_names)
     get_called = any(name in {"context.get", "mcp__contextrail__context_get", "mcp__contextrail__context.get"} for name in tool_names)
-    summary = {"client": client, "exit_code": process.returncode, "timed_out": timed_out,
+    summary = {"client": client, "exit_code": returncode, "timed_out": timed_out,
         "elapsed_seconds": round(time.monotonic() - start, 2), "tool_names": tool_names,
         "exact_result": exact, "packet_called": packet_called, "cold_get_called": get_called,
-        "passed": process.returncode == 0 and exact and packet_called and get_called,
+        "passed": returncode == 0 and exact and packet_called and get_called,
         "packet_wire_exact": packet_read_exact, "cold_wire_exact": cold_read_exact,
-        "retrieval_passed": process.returncode == 0 and packet_read_exact and cold_read_exact and packet_called and get_called,
+        "retrieval_passed": returncode == 0 and packet_read_exact and cold_read_exact and packet_called and get_called,
         "native_session": native_session,
         "hook_activation": "not_changed_requires_native_review" if client == "codex" else "explicit_settings_invocation"}
     with Store(data["store"]) as store:
