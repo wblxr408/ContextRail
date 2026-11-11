@@ -27,7 +27,7 @@ from contextrail.native_clients import host_hook, prepare_clients
 from contextrail.project import load_project
 
 
-def fixture(output):
+def fixture(output, *, existing_memory=True):
     output.mkdir(parents=True, exist_ok=False)
     workspace = output / "workspace"
     workspace.mkdir()
@@ -55,9 +55,11 @@ def fixture(output):
         exported = BridgeEvidence(store, config.scope, lease.session).import_bundle(bundle, "implementation", lease)
         manifest = json.loads(store.get(config.scope, Ref(**exported["manifest_ref"])).content)
         # Existing main-memory hook command: the same program invoked by current Codex hooks.json.
-        command_file = output / "existing-memory-command.json"
-        command_file.write_text(canonical([str(Path.home() / "AppData/Roaming/uv/tools/basic-memory/Scripts/python.exe"),
-                                          str(Path.home() / ".codex/services/engineering-memory/app/memory_cli.py"), "hook"]), encoding="utf-8")
+        command_file = None
+        if existing_memory:
+            command_file = output / "existing-memory-command.json"
+            command_file.write_text(canonical([str(Path.home() / "AppData/Roaming/uv/tools/basic-memory/Scripts/python.exe"),
+                                              str(Path.home() / ".codex/services/engineering-memory/app/memory_cli.py"), "hook"]), encoding="utf-8")
         layout = prepare_clients(store, config, lease, exported["snapshot"], output / "layout", memory_command=command_file,
                                   context_bytes=7000)
     schema = {"type": "object", "properties": {"objective": {"type": "string"}, "cold_tail": {"type": "string"}},

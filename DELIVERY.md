@@ -1,6 +1,12 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 70/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 71/72。按用户要求在 H08 后结束，I01 保留待办。
+
+## H08 原生 Windows 验收收尾
+
+Windows 本机通过 PowerShell 创建中文 junction，使用已安装的 Claude Code `.cmd` 入口。在隔离工作区，原生 CLI 保留中文及 emoji 提示，Hook 在同一任务库写入与原生会话及快照匹配的回执。原生客户端实际调用 MCP 读回精确任务包与 CRLF 冷页，JSON 内容一致，退出 0。
+
+同一次验收中，原生 Codex 使用已有认证从同一任务库回读同一快照及冷页，JSON 一致，退出 0。两端结束后，按此次隔离目录核对的相关进程数为 0。Claude 的测试模型响应走本地回环端点，原生 Hook 和 MCP 继续走真实 Windows 进程。此前五项集中验收已覆盖锁占用重试、取消、隐藏窗口和进程树清理。在线模型服务此前返回的 429 属于该次受管接续结果。见 [复现命令](NATIVE_CLIENTS.md#windows-本地调用)。
 
 ## 第二十模块 I08
 
@@ -31,7 +37,7 @@ Windows 上两项集中用例和 wheel 构建通过。实际自用任务 revisio
 
 受管入口启动选定的 Codex 或 Claude Code，将精确快照和用户原文送入原生 CLI。复用现有只读 MCP、Windows Job、源会话读取与原生配置。两个阶段用例验证两端回读同一快照及 CRLF 冷页、原生退出码和会话身份，并验证无关快照在启动前被拒绝。wheel 构建通过。
 
-在 Windows 本机中文临时目录运行 `examples/native_client_acceptance.py --managed`。Codex 调用 `context.packet` 与 `context.get`，原文和最终 JSON 均一致，退出 0。Claude Code 启动事件返回自己的原生 ID，报告当前任务 MCP 已连接并列出 34 个 Rail 工具。模型接口记录了 10 次 429 重试，170 秒内未调用 MCP，启动器返回 124。回执保留同一快照与未绑定的源历史状态。两项仍保留开放。见 [受管启动与回执](NATIVE_CLIENTS.md#通过指定客户端继续同一工作块)。
+在 Windows 本机中文临时目录运行 `examples/native_client_acceptance.py --managed`。Codex 调用 `context.packet` 与 `context.get`，原文和最终 JSON 均一致，退出 0。Claude Code 启动事件返回自己的原生 ID，报告当前任务 MCP 已连接并列出 34 个 Rail 工具。模型接口记录了 10 次 429 重试，170 秒内未调用 MCP，启动器返回 124。回执保留同一快照与未绑定的源历史状态。受管跨客户端接续保留在 I01。见 [受管启动与回执](NATIVE_CLIENTS.md#通过指定客户端继续同一工作块)。
 
 交付分支 `codex/native-managed-continuation`。
 
@@ -89,7 +95,7 @@ Windows 上两项集中用例和 wheel 构建通过。实际自用任务 revisio
 
 Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文 junction 安装配置并写入同一任务，Codex 与 Claude 配置的 Hook 和真实 MCP stdio 完成读回。批处理保留特殊字符，诊断与协议输出分离，Windows Job 清理超时、阻塞管道和遗留子进程。
 
-原生 Codex 在中文目录中完成任务包与冷页精确回读，正常退出。Claude 原生 Hook 有实际回执，模型接口返回 429，原生 MCP 回读仍待验证。H08 在 TODO 中保留开放。见 [Windows 本地调用](NATIVE_CLIENTS.md#windows-本地调用)。
+当期原生 Codex 在中文目录中完成任务包与冷页精确回读，正常退出。Claude 原生 Hook 有实际回执，模型接口返回 429。后续补测见 [H08 原生 Windows 验收收尾](#h08-原生-windows-验收收尾)。
 
 交付分支 `codex/windows-native-transport`。
 

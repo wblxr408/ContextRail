@@ -65,6 +65,13 @@ memory-command 文件是可信本机 argv 数组，不能来自模型参数或�
 
 Windows 上，Bridge 校验器、组合记忆 Hook 和配置写入适配器在隐藏控制台的进程树中运行。超时包含 stdin 写入，超时或取消时清理其子进程；命令已结束但子进程还持有输出管道时，也会清理。切换 registry 时遇到短暂的文件占用会重试，持续占用会返回冲突并保留原配置。
 
+可通过实际安装的 Claude Code 验证 Windows 传输。以下命令在新目录创建测试任务和中文 junction，用本次进程专用的回环 Messages 端点提供确定性的工具请求。真实原生 Hook 和 MCP stdio 执行读写，JSONL 及验收回执保存在该目录。添加 `--with-codex` 可用已有认证在同一任务上运行原生 Codex。参见 [Claude Code 网关配置](https://code.claude.com/docs/en/llm-gateway) 和 [Messages 流式格式](https://platform.claude.com/docs/en/build-with-claude/streaming)。
+
+```powershell
+$reportDir = Join-Path ([System.IO.Path]::GetTempPath()) ('H08 中文传输 ' + [Guid]::NewGuid().ToString('N'))
+.venv/Scripts/python.exe examples/windows_claude_transport.py --output $reportDir
+```
+
 ## 通过指定客户端继续同一工作块
 
 在 `client-prepare` 后，使用布局的 `registry`、当前精确 Rail `snapshot` 和 UTF-8 提示文件。两端分别运行自己的 CLI 并创建各自的原生会话。
