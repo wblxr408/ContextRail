@@ -101,7 +101,9 @@ def _bounded(value,budget,offset):
 
 def task_revision(tools):
     db=tools.store.db;scope=tools.scope.key
-    counts=tuple(tuple(row) for row in db.execute('SELECT status,count(*),sum(spans) FROM evidence_index_state WHERE scope=? GROUP BY status ORDER BY status',(scope,)))
+    counts=tuple(tuple(row) for row in db.execute(
+        'SELECT indexer,status,count(*),sum(spans) FROM evidence_index_state WHERE scope=? '
+        'GROUP BY indexer,status ORDER BY indexer,status',(scope,)))
     live=db.execute('SELECT count(*) FROM artifacts WHERE scope=? AND invalidated=0 AND (expires IS NULL OR expires>?)',(scope,tools.store.clock())).fetchone()[0]
     fts=db.execute("SELECT count(*) FROM sqlite_master WHERE name='evidence_fts'").fetchone()[0]
     return tools.store.task(tools.scope)['version'],counts,live,fts
@@ -121,7 +123,10 @@ def task_search(tools,query,limit,offset,source_bytes):
             'version':{'kind':'artifact_revision','value':ref['revision'],'state':'available'},
             'time':{'occurred_at':provenance.get('occurred_at'),'state':provenance.get('source_time_state','missing'),'basis':'captured_source' if provenance else 'artifact_has_no_occurrence'},
             'ref':{'reader':'context.get',**ref},'current_task_membership':True,'evidence_role':'task_evidence','source_score':row.get('score')})
-    return hits,page['total'],page['index']
+    coverage = page['index']
+    if page['suggestions']:
+        coverage = {**coverage, 'suggestions': page['suggestions']}
+    return hits,page['total'],coverage
 
 
 def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384,source_bytes=8192,refresh=False,since=None,until=None):

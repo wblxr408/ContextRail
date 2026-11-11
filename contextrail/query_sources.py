@@ -11,7 +11,7 @@ from .errors import InvalidRequest
 from .models import identifier
 from .source_events import workspace_key
 from .timeline_index import occurrence,canonical
-from .indexing import _tokens
+from .retrieval import _terms
 
 
 class SourceFailure(Exception):
@@ -89,7 +89,7 @@ def event_revision(db,binding):
 
 def events_search(db,binding,query,limit,offset,view,since=None,until=None):
     where,args=event_selection(binding)
-    terms=list(dict.fromkeys(_tokens(query)))[:16]
+    terms=[term for term in _terms(query) if len(term.encode("utf-8"))<=512][:16]
     if not terms:raise SourceFailure('unsupported_query_terms')
     # The deadline progress handler bounds scanning old, already processed bodies.
     # No second FTS index/store is introduced for this read facade.

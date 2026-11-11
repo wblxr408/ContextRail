@@ -17,6 +17,22 @@ from .store import Store
 
 
 _TERM = re.compile(r"[a-z0-9_./:=+\-]{2,}|[\u4e00-\u9fff]+", re.IGNORECASE)
+_INDEX_TOKEN = re.compile(
+    r"(?<![\w./\\-])[\\/]?(?:[\w.:-]+[\\/])+[\w.-]+|"
+    r"[a-z0-9_./:=+\-]{2,}|[\u4e00-\u9fff]+", re.IGNORECASE,
+)
+
+
+def lexical_tokens(text):
+    """Source character ranges paired with normalized lexical terms."""
+    for match in _INDEX_TOKEN.finditer(text):
+        raw = match.group().rstrip(".:")
+        if raw and (len(raw.encode("utf-8")) <= 512 or han_term(raw)):
+            yield match.start(), match.start() + len(raw), raw.casefold().replace("\\", "/")
+
+
+def han_term(term):
+    return "\u4e00" <= term[0] <= "\u9fff" and all("\u4e00" <= char <= "\u9fff" for char in term)
 
 
 def _terms(value: str) -> tuple[str, ...]:

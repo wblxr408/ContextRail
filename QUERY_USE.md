@@ -45,6 +45,46 @@ CLI把同一JSON写入文件：
 
 since包含/until不包含，均须带时区。task/memory的时间范围作用于当前候选页，覆盖元数据明确global_time_search=false，可继续下一来源页。events的时间范围在原库查询内过滤。各源分别提供total、fetched、shown、覆盖缺口及next_offset；memory offset沿用页大小的整数倍，预算省略其部分候选时返回本页重试，避免跳过未展示原文。
 
+## 标识符、路径和中文短词
+
+`search-indexed`、`context.search_indexed` 和统一查询中的任务来源使用同一份索引。中英文混合的路径支持 Windows 和 POSIX 分隔符，命中保留原文中的写法与字节范围。中文单字、双字可直接查找，多字词按连续字组匹配。普通词项在同一片段中相邻时优先显示。
+
+`useEff` 或 `useEfect` 没有精确结果时，可能在 `suggestions` 看到 `useEffect` 和可回读的 Ref。统一查询把这类候选放在 `sources.task.coverage.suggestions`。路径、版本号和错误码按输入匹配，即使附近正文也包含查询里的普通词。该实现参考了 [context-mode 的检索分层](https://github.com/mksglu/context-mode/blob/a92cf6a77ac02971fb5fafe2155e5ee229491884/src/store.ts)和 [ai-memory 的中文索引](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/crates/ai-memory-store/src/fts_query.rs)。
+
+旧索引的原有词项仍可查询。出现 `lexical_upgrade_pending` 时，用当前任务所有者重建该任务的索引，让新词项也覆盖旧材料。
+
+```powershell
+contextrail index-rebuild --workspace D:/ContextRail --task my-task --session owner --epoch 0
+contextrail search-indexed --workspace D:/ContextRail --task my-task --session owner --query '圆锥曲线'
+```
+
+## 有来源的网页缓存
+
+先用现有浏览器或连接器抓取页面，通过 `capture-result` 保存实际响应正文。宿主把正文的完整 Ref、抓取时间和 HTTP 信息写入 JSON，再提交一次观察。缓存键由任务作用域、可信宿主指定的 `source` 和请求 URL 组成，跳转后的最终 URL 单独保留。该身份组合参考 [context-mode 的抓取缓存](https://github.com/mksglu/context-mode/blob/a92cf6a77ac02971fb5fafe2155e5ee229491884/src/fetch-cache.ts)。
+
+```json
+{
+  "source": "browser-docs",
+  "url": "https://example.com/docs",
+  "status": 200,
+  "fetched_at": 1790000000,
+  "ttl_seconds": 900,
+  "http_version": "2",
+  "etag": "\"v1\"",
+  "expected_revision": 0,
+  "fetch_id": "docs-fetch-1",
+  "ref": {"name": "tool-result/docs-fetch-1/stdout", "revision": 1}
+}
+```
+
+```powershell
+contextrail web-cache-store --workspace D:/ContextRail --task my-task --session owner --epoch 0 --input observed-response.json
+contextrail web-cache-get --workspace D:/ContextRail --task my-task --session owner --source browser-docs --url https://example.com/docs
+contextrail web-cache-get --workspace D:/ContextRail --task my-task --session owner --source browser-docs --url https://example.com/docs --refresh
+```
+
+把示例时间和 Ref 换成实际抓取结果。读取时只有 `fresh` 提供 `read_ref`。到期或显式要求刷新时，根据 `conditional` 让原连接器发出请求。收到 HTTP 304 后，用返回的版本填 `expected_revision`，提交新的 `fetch_id`、抓取时间和原样的 `validator`，省略 `ref`。收到新正文时则提交新的完整 Ref。缓存读取也可用 MCP `context.web_cache`，它返回本地观察和刷新状态。历史 Ref 保留原始证据的回读路径。
+
 ## 重复与继续
 
 同批完全相同查询只执行一次。常驻MCP/SDK读会话另有有界内存缓存：R绑定任务/索引/过期状态，events绑定所选会话capture序号，memory绑定原服务返回的目录/检索配置版本。版本无法确认或来源失败时不以旧成功缓存冒充新鲜结果。缓存不写第二个memory store；CLI独立进程之间不共享缓存。

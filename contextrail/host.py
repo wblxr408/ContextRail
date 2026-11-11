@@ -24,6 +24,14 @@ class ContextTools:
         self.store.session(self.scope, self.session_id)
         if not isinstance(arguments, dict):
             raise InvalidRequest("Tool arguments must be an object.")
+        if name == "context.web_cache":
+            from .web_cache import lookup
+            self._keys(arguments, required={"source", "url"}, optional={"refresh", "budget"})
+            budget = arguments.get("budget", min(4096, self.max_read_bytes))
+            integer(budget, 1)
+            if budget > self.max_read_bytes:
+                raise InvalidRequest("Web cache budget exceeds the bound reader limit.")
+            return lookup(self.store, self.scope, **{**arguments, "budget": budget})
         if name in {'context.deliverables','context.deliverable'}:
             from .deliverables import list_products,detail
             if name=='context.deliverables':
@@ -193,6 +201,10 @@ class ContextTools:
     @staticmethod
     def definitions() -> list[dict]:
         return [
+            {"name": "context.web_cache", "description": "Read a task-bound web observation by source and URL, with freshness and original body references. Does not fetch or write.",
+             "input_schema": {"type": "object", "properties": {"source": {"type": "string"}, "url": {"type": "string"},
+                 "refresh": {"type": "boolean"}, "budget": {"type": "integer", "minimum": 1}},
+                 "required": ["source", "url"], "additionalProperties": False}},
             {'name':'context.metrics','description':'Read persisted request/tool observations, recovery bytes and bound native usage. Unknown final payloads, unobserved calls and savings remain unknown. No model calls.',
              'input_schema':{'type':'object','properties':{'offset':{'type':'integer','minimum':0},'limit':{'type':'integer','minimum':1,'maximum':100},'budget':{'type':'integer','minimum':2048,'maximum':65536}},'additionalProperties':False}},
             {'name':'context.efficiency','description':'Read-only explicit estimate of compaction/cache amortization. Missing costs stay unknown; no generation or model call is started.',

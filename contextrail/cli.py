@@ -20,6 +20,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "bridge-receipt", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
                     "search-indexed", "index-status", "index-rebuild", "index-recover", "backup-create", "result-search",
+                    "web-cache-store", "web-cache-get",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history")
 
@@ -171,6 +172,13 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--query", required=True)
             sub.add_argument("--limit", type=int, default=5)
             sub.add_argument("--offset", type=int, default=0)
+        elif command == "web-cache-store":
+            sub.add_argument("--epoch", type=int, required=True)
+            sub.add_argument("--input", type=Path, required=True, help="Trusted capture-host HTTP observation JSON")
+        elif command == "web-cache-get":
+            sub.add_argument("--source", required=True)
+            sub.add_argument("--url", required=True)
+            sub.add_argument("--refresh", action="store_true", help="Require a new fetch by the existing connector")
         elif command == "directory-sync":
             sub.add_argument("--epoch", required=True, type=int)
             selection = sub.add_mutually_exclusive_group(required=True)
@@ -453,6 +461,23 @@ def project_command(args):
             from .directory_memory import enqueue_directory
             print(canonical(enqueue_directory(store, config, Lease(args.session, args.epoch), args.run, args.memory_home,
                 code=args.memory_code, offset=args.offset, limit=args.limit, budget=config.response_bytes)))
+        elif args.command == "web-cache-store":
+            from .web_cache import save_observation
+            try:
+                with args.input.open("rb") as stream:
+                    raw = stream.read(16385)
+                if len(raw) > 16384:
+                    raise ValueError()
+                observation = json.loads(raw)
+            except (ValueError, RecursionError):
+                raise InvalidRequest("Web observation input must be valid JSON within 16 KiB.") from None
+            print(canonical(save_observation(store, config.scope, Lease(args.session, args.epoch), observation,
+                                             budget=config.response_bytes)))
+        elif args.command == "web-cache-get":
+            tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes)
+            print(canonical(tools.call("context.web_cache", {"source": args.source, "url": args.url,
+                                                             "refresh": args.refresh,
+                                                             "budget": min(config.response_bytes, config.read_bytes)})))
         elif args.command == "result-search":
             try:
                 ref = json.loads(args.result_ref)

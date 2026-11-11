@@ -18,18 +18,26 @@ def validate_options(context_chars=80, window_limit=3):
 
 
 def _occurrences(text, terms):
-    from .retrieval import _TERM
+    from .retrieval import han_term, lexical_tokens
     wanted = set(terms)
     found = set()
-    for match in _TERM.finditer(text):
-        word = match.group(0).casefold()
-        if len(word.encode("utf-8")) <= 512 and word in wanted:
-            found.add((match.start(), match.end(), word))
-        if "\u4e00" <= word[0] <= "\u9fff":
-            for index in range(len(word) - 1):
-                term = word[index:index + 2]
-                if term in wanted:
-                    found.add((match.start() + index, match.start() + index + 2, term))
+    for start, end, word in lexical_tokens(text):
+        if word in wanted:
+            found.add((start, end, word))
+        if "/" in word:
+            relative = 0
+            for part in text[start:end].replace("\\", "/").split("/"):
+                if part.casefold() in wanted:
+                    found.add((start + relative, start + relative + len(part), part.casefold()))
+                relative += len(part) + 1
+        if han_term(word):
+            for term in wanted:
+                if not han_term(term):
+                    continue
+                index = word.find(term)
+                while index != -1:
+                    found.add((start + index, start + index + len(term), term))
+                    index = word.find(term, index + 1)
     return sorted(found)
 
 

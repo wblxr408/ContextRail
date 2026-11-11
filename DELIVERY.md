@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 54/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 56/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -59,3 +59,9 @@ Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文
 原生 Codex 在中文目录中完成任务包与冷页精确回读，正常退出。Claude 原生 Hook 有实际回执，模型接口返回 429，原生 MCP 回读仍待验证。H08 在 TODO 中保留开放。见 [Windows 本地调用](NATIVE_CLIENTS.md#windows-本地调用)。
 
 交付分支 `codex/windows-native-transport`。
+
+## 第十模块 C04 / C07
+
+检索保留路径、中文短词和标识符的原文 Ref，前缀与拼写候选单独展示。既有索引可继续查询，显式重建后常驻查询重新读取。网页缓存按任务、可信来源及 URL 存储有版本的观察，明确过期、刷新和 HTTP 重验证。Windows 本地 10 项集中验收和 wheel 构建通过，HTTP 链路使用实际回环服务器。见 [查询与网页缓存用法](QUERY_USE.md)。
+
+交付分支 `codex/retrieval-web-evidence`。

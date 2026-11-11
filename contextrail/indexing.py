@@ -2,6 +2,8 @@
 
 from dataclasses import asdict
 from contextlib import nullcontext
+from difflib import SequenceMatcher
+import re
 import sqlite3
 
 from .chunking import StructuralChunker, uncovered_spans
@@ -9,7 +11,8 @@ from .errors import BudgetExceeded, InvalidRequest, NotFound, Unavailable
 from .models import Ref, canonical, integer, unicode_text
 
 
-INDEXER = "lexical-spans-v2"
+INDEXER = "lexical-spans-v3"
+LEGACY_INDEXER = "lexical-spans-v2"
 MAX_INPUT = 16 * 1024 * 1024
 MAX_SPANS = 4096
 SPAN_BYTES = 8192
@@ -33,21 +36,96 @@ def initialize(store):
                      "FROM heads h JOIN artifacts a ON a.scope=h.scope AND a.name=h.name AND a.revision=h.revision", (INDEXER,))
 
 
-def _tokens(text):
-    # Keep the existing lexical grammar and Chinese bigrams, but preserve
-    # repetition for FTS term-frequency scoring instead of deduplicating it.
-    from .retrieval import _TERM
-    for match in _TERM.finditer(text):
-        word = match.group(0).casefold()
-        if len(word.encode("utf-8")) <= 512:
-            yield word
-        if "\u4e00" <= word[0] <= "\u9fff":
-            for index in range(len(word) - 1):
-                yield word[index:index + 2]
+_FUZZY_WORD = re.compile(r"[a-z][a-z_]{3,63}")
+
+
+def _term(term, prefix="t"):
+    return prefix + term.encode("utf-8").hex()
+
+
+def _grams(word):
+    return dict.fromkeys(word[index:index + 3] for index in range(len(word) - 2))
 
 
 def _encoded(text):
-    return " ".join("t" + token.encode("utf-8").hex() for token in _tokens(text))
+    from .retrieval import han_term, lexical_tokens
+
+    terms, grams = [], {}
+    for start, end, word in lexical_tokens(text):
+        if len(word.encode("utf-8")) <= 512:
+            terms.append(_term(word))
+        if "/" in word:
+            terms.extend(_term(part) for part in word.split("/") if len(part) > 1)
+        if han_term(word) and len(word) > 1:
+            if len(word) > 2:
+                terms.extend(_term(word[index:index + 2]) for index in range(len(word) - 1))
+            terms.extend(_term(character) for character in dict.fromkeys(word))
+        elif len(grams) < 384 and _FUZZY_WORD.fullmatch(word) and not text[start:end].isupper():
+            grams.update(_grams(word))
+    return " ".join((*terms, *(_term(gram, "g") for gram in list(grams)[:384])))
+
+
+def _lookup_expression(query, spans, used):
+    from .retrieval import han_term
+
+    expressions, literals = [], []
+    for word in used:
+        exact = f'"{_term(word)}"'
+        if han_term(word) and 2 < len(word) <= 64:
+            bigrams = " ".join(_term(word[index:index + 2]) for index in range(len(word) - 1))
+            expressions.append(f'({exact} OR "{bigrams}")')
+        else:
+            expressions.append(exact)
+        if not han_term(word) and (
+            any(char in word for char in "/.=:") or any(char.isdigit() for char in word)
+            or any(end - start >= 3 and query[start:end].isupper() for start, end, value in spans if value == word)
+        ):
+            literals.append(exact)
+    if literals:
+        return " AND ".join(literals), "all_explicit_literals"
+    if 1 < len(expressions) <= 6 and all(not item.startswith("(") for item in expressions):
+        expressions.insert(0, "NEAR(" + " ".join(expressions) + ", 8)")
+    return " OR ".join(expressions), "lexical_terms_with_proximity"
+
+
+def _suggestions(store, scope, word, joins, args):
+    from .retrieval import lexical_tokens
+
+    # These candidates never populate exact hits. Hex tokens are built here,
+    # with no caller-supplied MATCH syntax or unrestricted vocabulary reads.
+    grams = _grams(word)
+    match = " OR ".join([f'"{_term(word)}"*', *(f'"{_term(gram, "g")}"' for gram in grams)])
+    rows = store.db.execute(
+        "SELECT evidence_fts.*" + joins +
+        " ORDER BY bm25(evidence_fts),evidence_fts.name,evidence_fts.start_byte LIMIT 24",
+        (*args[:2], match, *args[3:]),
+    ).fetchall()
+    candidates, compared = [], set()
+    for row in rows:
+        source = Ref(row["name"], row["revision"], row["start_byte"], row["end_byte"])
+        text = store.get(scope, source).content.decode("utf-8")
+        for start, end, token in lexical_tokens(text):
+            spelling = text[start:end]
+            if token in compared or token == word or not _FUZZY_WORD.fullmatch(token) or spelling.isupper():
+                continue
+            prefix = token.startswith(word)
+            if not prefix and (abs(len(word) - len(token)) > 2 or not any(gram in token for gram in grams)):
+                continue
+            if len(compared) == 512:
+                break
+            compared.add(token)
+            ratio = SequenceMatcher(None, word, token, autojunk=False).ratio()
+            if not prefix and ratio < 0.75:
+                continue
+            begin = source.start + len(text[:start].encode("utf-8"))
+            ref = Ref(source.name, source.revision, begin, begin + len(spelling.encode("utf-8")))
+            candidates.append((not prefix, -ratio, token, {
+                "text": spelling, "reason": "identifier_prefix" if prefix else "similar_spelling",
+                "ref": asdict(ref),
+            }))
+        if len(compared) == 512:
+            break
+    return [item[-1] for item in sorted(candidates)[:5]]
 
 
 def _spans(name, revision, content, sha, media_type):
@@ -151,8 +229,10 @@ def status(store, scope):
     for row in rows:
         if row["invalidated"] or row["expires"] is not None and row["expires"] <= now:
             state, reason = "unavailable", "invalidated_or_expired"
-        elif (row["indexed_revision"] != row["revision"] or row["source_sha256"] != row["sha256"] or row["indexer"] != INDEXER):
+        elif (row["indexed_revision"] != row["revision"] or row["source_sha256"] != row["sha256"]):
             state, reason = "pending", "source_not_indexed"
+        elif row["indexer"] != INDEXER:
+            state, reason = "pending", "lexical_upgrade_pending" if row["indexer"] == LEGACY_INDEXER else "source_not_indexed"
         elif not store.fts_available:
             state, reason = "pending", "fts5_unavailable"
         else:
@@ -215,8 +295,10 @@ def source_status(store, scope, refs):
             state, reason = "unavailable", "source_unavailable"
         elif row["head_revision"] != ref.revision:
             state, reason = "pending", "historical_revision_not_indexed"
-        elif (row["indexed_revision"] != ref.revision or row["source_sha256"] != row["sha256"] or row["indexer"] != INDEXER):
+        elif (row["indexed_revision"] != ref.revision or row["source_sha256"] != row["sha256"]):
             state, reason = "pending", "source_not_indexed"
+        elif row["indexer"] != INDEXER:
+            state, reason = "pending", "lexical_upgrade_pending" if row["indexer"] == LEGACY_INDEXER else "source_not_indexed"
         elif not store.fts_available:
             state, reason = "pending", "fts5_unavailable"
         else:
@@ -245,24 +327,26 @@ def search(store, scope, query, *, limit=20, offset=0, budget=8192, within=None,
     if within is not None and (not isinstance(within, tuple) or not 1 <= len(within) <= 2 or
             any(not isinstance(ref, Ref) or ref.start != 0 or ref.end is not None for ref in within)):
         raise InvalidRequest("Result search requires one or two complete explicit source revisions.")
-    tokens = tuple(dict.fromkeys(_tokens(query)))
+    from .retrieval import han_term, lexical_tokens
+    spans = tuple(lexical_tokens(query))
+    tokens = tuple(dict.fromkeys(word for _, _, word in spans if len(word.encode("utf-8")) <= 512))
     if not tokens:
         raise InvalidRequest("Query has no supported lexical terms; use literal search or exact read.")
     used = tokens[:16]
     # Encoded complete words make MATCH an expression created by this module,
     # never a SQL/FTS expression supplied by the model or evidence text.
-    match = " OR ".join('"t' + token.encode("utf-8").hex() + '"' for token in used)
+    match, match_policy = _lookup_expression(query, spans, used)
     joins = (" FROM evidence_fts JOIN heads h ON h.scope=evidence_fts.scope AND h.name=evidence_fts.name AND h.revision=evidence_fts.revision "
              "JOIN artifacts a ON a.scope=h.scope AND a.name=h.name AND a.revision=h.revision "
              "JOIN evidence_index_state s ON s.scope=h.scope AND s.name=h.name AND s.revision=h.revision "
-             "AND s.source_sha256=a.sha256 AND s.indexer=? AND s.status='indexed' "
+             "AND s.source_sha256=a.sha256 AND s.indexer IN (?,?) AND s.status='indexed' "
              "WHERE evidence_fts MATCH ? AND h.scope=? AND a.sha256=evidence_fts.source_sha256 "
              "AND a.invalidated=0 AND (a.expires IS NULL OR a.expires>?)")
     with (nullcontext() if within is not None and store.db.in_transaction else store.read_transaction()):
         coverage = status(store, scope) if within is None else source_status(store, scope, within)
         if not store.fts_available:
             raise Unavailable("SQLite FTS5 is unavailable; use literal search or exact evidence reads.")
-        args = (INDEXER, match, scope.key, store.clock())
+        args = (INDEXER, LEGACY_INDEXER, match, scope.key, store.clock())
         if within is not None:
             joins += " AND (" + " OR ".join("(evidence_fts.name=? AND evidence_fts.revision=?)" for ref in within) + ")"
             args += tuple(value for ref in within for value in (ref.name, ref.revision))
@@ -278,16 +362,24 @@ def search(store, scope, query, *, limit=20, offset=0, budget=8192, within=None,
                 cached_content = store.get(scope, source_ref).content
                 cached_ref = source_ref
             available = set((row["title"] + " " + row["terms"]).split())
-            matched = [term for term in used if "t" + term.encode("utf-8").hex() in available]
+            matched = [term for term in used if _term(term) in available or (
+                2 < len(term) <= 64 and han_term(term) and
+                all(_term(term[i:i + 2]) in available for i in range(len(term) - 1)))]
             hits.append({"ref": asdict(ref), "path": row["path"], "score": -row["score"], "matched_terms": matched,
                          **project_windows(cached_content, ref, row["path"], matched, context_chars=context_chars, window_limit=window_limit)})
             source = store.db.execute("SELECT path FROM directory_files WHERE scope=? AND name=? LIMIT 1", (scope.key, row["name"])).fetchone()
             if source:
                 hits[-1]["source_path"] = source[0]
+        suggestions = []
+        exact_input = query.strip()
+        if (total == 0 and offset == 0 and len(used) == 1 and _FUZZY_WORD.fullmatch(used[0])
+                and exact_input.casefold() == used[0] and not exact_input.isupper()):
+            suggestions = _suggestions(store, scope, used[0], joins, args)
     result = {"schema": "contextrail.indexed-search.v1", "query": query, "terms": list(used), "unused_terms": list(tokens[16:]),
               "ranking": "sqlite_fts5_bm25", "ranking_statistics": "shared_index; compare_only_within_this_query",
-              "match": "any_complete_lexical_term", "range_unit": "bytes", "trust": "untrusted_evidence_candidates",
-              "index": coverage, "status": "matched" if total else "no_match" if coverage["complete"] else "index_pending",
+              "match": match_policy, "range_unit": "bytes", "trust": "untrusted_evidence_candidates",
+              "suggestions": suggestions, "index": coverage,
+              "status": "matched" if total else "no_match" if coverage["complete"] else "index_pending",
               "total": total, "offset": offset, "hits": hits}
     while True:
         result.update(returned=len(hits), omitted=max(0, total - offset - len(hits)),
@@ -295,6 +387,9 @@ def search(store, scope, query, *, limit=20, offset=0, budget=8192, within=None,
                       continuation="increase_budget_or_refine_query" if total > offset and not hits else "page_or_exact_read")
         if len(canonical(result).encode("utf-8")) <= budget:
             return result
+        if suggestions:
+            suggestions.pop()
+            continue
         if not hits:
             raise BudgetExceeded("Indexed search metadata cannot fit the complete response byte budget.")
         hits.pop()
