@@ -59,6 +59,7 @@ class RemoteRuntime:
     def observations(self,*args,**kwargs):return self.invoke('observations',*args,**kwargs)
     def relations(self,*args,**kwargs):return self.invoke('relations',*args,**kwargs)
     def consolidation(self,**kwargs):return self.invoke('consolidation',**kwargs)
+    def personal_profile(self,**kwargs):return self.invoke('personal_profile',**kwargs)
     def retain(self,*args,**kwargs):return self.invoke('retain',*args,**kwargs)
     def reflect(self,query,scope=None,generator=None):return self.invoke('reflect',query,scope,_synthesize=generator is not None)
     def page(self,name,query,scope=None,refresh=False,generator=None,*,history=False,version=None,as_of=None):

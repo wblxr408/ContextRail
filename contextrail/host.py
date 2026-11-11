@@ -72,7 +72,12 @@ class ContextTools:
             try:refs=tuple(Ref(**r) for r in requested)
             except (TypeError,ValueError):raise InvalidRequest('Invalid requested evidence reference') from None
             packet=Compiler(self.store).brief(self.scope,arguments['snapshot'],self.session_id,**{**{k:v for k,v in arguments.items() if k not in {'snapshot','requested','budget'}},'budget':budget,'requested':refs})
-            return json.loads(packet.body)
+            result=json.loads(packet.body)
+            if self.query_binding is not None and name=='context.brief':
+                from .federation import bound_sources
+                from .profile_brief import attach_profile
+                result=attach_profile(result,bound_sources(self),result['task'],budget)
+            return result
         if name=='context.query':
             from .federation import query
             self._keys(arguments,required={'queries'},optional={'view','limits','offsets','budget','source_bytes','refresh','since','until'})

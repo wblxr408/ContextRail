@@ -26,7 +26,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history",
                     "experience-review", "experience-reject", "read-heat", "document-import", "material-get",
-                    "memory-consolidation", "experience-rule-draft")
+                    "memory-consolidation", "experience-rule-draft", "personal-profile")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -123,7 +123,7 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--context-bytes", type=int)
         if command in ("project-info", "client-prepare"):
             sub.add_argument("--hook-bytes", type=int)
-        if command in {'mcp','query','status','brief','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
+        if command in {'mcp','query','status','brief','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable','bridge-packet','continue'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
         if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history", "index-recover", "backup-create"):
             sub.add_argument("--session", required=True)
         if command in ("backup-create", "index-recover"):
@@ -155,6 +155,10 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--ref", required=True, help="Exact material Ref from the query result as JSON")
             sub.add_argument("--start", type=int, default=0)
             sub.add_argument("--end", type=int)
+        elif command == "personal-profile":
+            sub.add_argument("--query-binding", type=Path, required=True)
+            sub.add_argument("--input", type=Path, help="Explicit user profile action JSON, or stdin")
+            sub.add_argument("--epoch", type=int, help="Current owner epoch for recording or withdrawing a default")
         elif command == "memory-consolidation":
             sub.add_argument("--query-binding", type=Path, required=True)
             sub.add_argument("--input", type=Path, help="Bounded review request JSON, or stdin")
@@ -480,6 +484,44 @@ def project_command(args):
             print(canonical(tools.call("context.material_get", {
                 "ref": ref, "start": args.start, "end": args.end,
                 "budget": min(config.read_bytes, config.response_bytes)})))
+        elif args.command == "personal-profile":
+            import time
+            from contextlib import nullcontext
+            from .errors import Unavailable
+            from .query_sources import ExistingMemory, SourceFailure
+
+            try:
+                with (args.input.open("rb") if args.input else nullcontext(sys.stdin.buffer)) as stream:
+                    raw=stream.read(4097)
+                if len(raw)>4096:
+                    raise ValueError()
+                request=json.loads(raw or b'{}')
+                if not isinstance(request,dict) or request.keys()-{'action','scope','event_id','subject','statement','limit'}:
+                    raise ValueError()
+                action=request.get('action','view')
+                if action not in ('view','set','revoke'):
+                    raise ValueError()
+            except (OSError,ValueError,RecursionError):
+                raise InvalidRequest("Provide a bounded personal profile request.") from None
+            if query_binding is None or query_binding.memory_home is None:
+                raise InvalidRequest("A personal profile requires the original memory binding.")
+            writes=action!='view'
+            if writes and args.epoch is None:
+                raise InvalidRequest("Recording a preference requires the current task owner epoch.")
+            options={**request,'scope':query_binding.workspace}
+            if 'scope' in request:
+                options['record_scope']=request['scope']
+            with store.transaction() if writes else nullcontext():
+                if writes:
+                    store._lease(config.scope,Lease(args.session,args.epoch))
+                else:
+                    store.session(config.scope,args.session)
+                try:
+                    result=ExistingMemory(query_binding).invoke(
+                        "personal_profile",[],options,time.monotonic()+query_binding.timeout_seconds)
+                except SourceFailure:
+                    raise Unavailable("The original memory service could not complete the profile request.") from None
+            print(canonical(result))
         elif args.command == "memory-consolidation":
             import time
             from contextlib import nullcontext
@@ -701,6 +743,9 @@ def project_command(args):
             elif args.command == "bridge-packet":
                 output = bridge.packet(args.snapshot, budget=packet_budget,
                                        prefer_frequent_reads=args.prefer_frequent_reads)
+                if query_binding is not None:
+                    from .profile_brief import attach_profile
+                    output=attach_profile(output,query_binding,output['context']['task'],packet_budget)
             else:
                 output = bridge.receipt(args.snapshot, args.receipt)
             print(canonical(output))
@@ -795,7 +840,11 @@ def project_command(args):
                 output = navigation.search(args.query, limit=args.limit)
             else:
                 output = navigation.resume(args.snapshot, budget=packet_budget,
-                                           prefer_frequent_reads=args.prefer_frequent_reads)
+                                           prefer_frequent_reads=args.prefer_frequent_reads,
+                                           query_binding_path=args.query_binding.resolve() if args.query_binding else None)
+                if query_binding is not None:
+                    from .profile_brief import attach_profile
+                    output=attach_profile(output,query_binding,output['context']['task'],packet_budget)
             print(canonical(output))
         else:
             import asyncio

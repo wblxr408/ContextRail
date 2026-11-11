@@ -160,8 +160,10 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
         registry["bindings"].append({"client": client, "workspace": str(config.workspace), "store": str(config.store),
             "scope": asdict(config.scope), "session": reader.session, "base_snapshot": base_snapshot,
             "owner": asdict(lease), "enabled": True, "context_bytes": context_bytes, "hook_bytes": hook_bytes})
+        if query_binding is not None:
+            registry["bindings"][-1]["query_binding"] = str(query_binding)
         if context_assistance:
-            registry["bindings"][-1].update(query_binding=str(query_binding), context_assistance=True)
+            registry["bindings"][-1]["context_assistance"] = True
         if task_command:
             registry["bindings"][-1]["memory"] = {"command": task_command, "timeout_seconds": 18}
     # Validate with the same consumer contract before membership/file publication.
@@ -435,6 +437,21 @@ def _task_context(binding, payload, client, original, memory_status, *, recovery
                 low = middle
             else:
                 high = middle - 1
+        if recovery is None and binding.get("query_binding"):
+            from .profile_brief import load_profile
+            from .query_sources import QueryBinding
+            try:
+                profile_binding = QueryBinding.load(binding["query_binding"], scope.task, binding["workspace"])
+            except RailError:
+                profile_binding = None
+            profile = load_profile(profile_binding, task["context"]["task"], prompt=payload.get("prompt"), seconds=1.5)
+            if profile is not None:
+                context["personal_profile"] = profile
+                while not fits(low) and profile["entries"]:
+                    profile["entries"].pop()
+                    profile["omitted"] = profile.get("omitted", 0) + 1
+                if not fits(low):
+                    context.pop("personal_profile")
         prepared_bytes = render(low)
         # Existing task audit only: an invocation receipt, not raw prompt,
         # transcript capture or proof that a model acted on this context.

@@ -14,6 +14,7 @@ import re
 import sqlite3
 import threading
 import sys
+import time
 import unicodedata
 from uuid import uuid4, uuid5, NAMESPACE_URL
 
@@ -43,6 +44,21 @@ def tokens(text):
     for run in re.findall(r'[\u3400-\u9fff]+', text):
         result.extend(run[i:i+2] for i in range(len(run)-1))
     return [t for t in result if t not in {'我们', '之前', '怎样', '如何', '什么', '现在', '哪些', '一下', '是否', '需要', '可以', 'must', 'the', 'and', 'or'}]
+
+
+_IDENTIFIER = re.compile(r'^(?:[A-Z][A-Z0-9_-]*\d[A-Z0-9_-]*|ERR_[A-Z_]+|E[A-Z]{3,15}|0x[0-9a-fA-F]+|[0-9a-f]{8,40})$')
+_FILENAME = re.compile(r'^[\w.-]+\.[a-zA-Z][a-zA-Z0-9]{0,9}$')
+_COMMON_CODE = re.compile(r'^(?:http[1-5]\d{2}|err_[a-z_]+|e(?:acces|perm|noent|connreset|timedout))$', re.I)
+
+
+def literal_anchors(query):
+    anchors = []
+    for word in query.split():
+        word = word.strip("\x60\"'()[]{};,.:")
+        if (("/" in word or "\\" in word) and len(word) > 2
+                or _IDENTIFIER.fullmatch(word) or _FILENAME.fullmatch(word) or _COMMON_CODE.fullmatch(word)):
+            anchors.append(word.replace("\\", "/").casefold())
+    return tuple(dict.fromkeys(anchors))
 
 
 def scope_key(scope):
@@ -449,10 +465,13 @@ class MemoryRuntime:
             result.append(note)
         return result, {'unknown_recorded_events':len(unknown_events), 'unversioned_notes_excluded':unversioned_notes}
 
-    def _dense(self, query, notes):
+    def _dense(self, query, notes, bound=None):
         q = self.models.embed([query])[0]
         ranked = []
         for note in notes:
+            if bound is not None and (bound['passages'] >= 64 or time.monotonic() >= bound['deadline']):
+                bound['limited'] = True
+                break
             source = self.vault / note['path']
             stamp = source.stat()
             version = json.dumps([stamp.st_mtime_ns,stamp.st_size,note['content'] if note['meta'].get('memory_event') else None],ensure_ascii=False)
@@ -461,15 +480,30 @@ class MemoryRuntime:
                                   (note['path'], version, model)).fetchone()
             if row:
                 vectors = json.loads(row[0])
+                if bound is not None:
+                    cap = min(6, 64 - bound['passages'])
+                    bound['limited'] |= len(vectors) > cap
+                    vectors = vectors[:cap]
             else:
                 # Paragraph windows keep deep evidence within the model's finite token window.
-                chunks = [note['title'] + '\n' + note['content'][i:i+350]
-                          for i in range(0, max(1, len(note['content'])), 280)]
+                positions = range(0, max(1, len(note['content'])), 280)
+                if bound is not None:
+                    cap = min(6, 64 - bound['passages'])
+                    bound['limited'] |= len(positions) > cap
+                    selected_positions = positions[:cap]
+                else:
+                    selected_positions = positions
+                title = note['title'][:160] if bound is not None else note['title']
+                chunks = [title + '\n' + note['content'][i:i+350] for i in selected_positions]
                 vectors = self.models.embed(chunks)
-                with self.db:
-                    self.db.execute('DELETE FROM memory_vectors WHERE path=?', (note['path'],))
-                    self.db.execute('INSERT INTO memory_vectors VALUES(?,?,?,?)',
-                                    (note['path'], version, model, json.dumps(vectors)))
+                # A bounded prefix must never masquerade as a cached full note.
+                if len(selected_positions) == len(positions) and title == note['title']:
+                    with self.db:
+                        self.db.execute('DELETE FROM memory_vectors WHERE path=?', (note['path'],))
+                        self.db.execute('INSERT INTO memory_vectors VALUES(?,?,?,?)',
+                                        (note['path'], version, model, json.dumps(vectors)))
+            if bound is not None:
+                bound['passages'] += len(vectors)
             def cosine(v):
                 denom = math.sqrt(sum(x*x for x in q) * sum(x*x for x in v))
                 return sum(a*b for a,b in zip(q,v)) / denom if denom else 0.0
@@ -483,13 +517,16 @@ class MemoryRuntime:
 
     def recall(self, query, *, scope=None, after=None, before=None, include_history=False,
                mode='hybrid', limit=5, page=1, metadata=None, graph_hops=2,rerank_limit=20,include_revision=False,
-               as_of=None):
+               as_of=None, allow_semantic=True):
         if type(include_revision) is not bool:raise ValueError('include_revision must be boolean')
+        if type(allow_semantic) is not bool:raise ValueError('allow_semantic must be boolean')
         if not isinstance(query, str) or not query.strip():
             raise ValueError('A nonempty query is required')
+        if mode=='adaptive' and len(query)>1024:
+            raise ValueError('Adaptive query exceeds its bounded input size')
         if not isinstance(rerank_limit,int) or isinstance(rerank_limit,bool) or not 1<=rerank_limit<=100:
             raise ValueError('Rerank limit must be an integer from 1 to 100')
-        if mode not in {'text', 'hybrid', 'vector'} or not 1 <= limit <= 100 or page < 1:
+        if mode not in {'text', 'hybrid', 'vector', 'adaptive'} or not 1 <= limit <= 100 or page < 1:
             raise ValueError('Invalid search mode or pagination')
         if type(graph_hops) is not int or not 0<=graph_hops<=3:raise ValueError('Graph hops must be 0..3')
         point = as_of_instant(as_of) if as_of is not None else None
@@ -514,8 +551,14 @@ class MemoryRuntime:
             terms = set(tokens(query))
             lexical = []
             boolean = bool(re.search(r'\b(AND|OR|NOT)\b|"[^\"]+"', query))
+            anchors = literal_anchors(query) if mode == 'adaptive' and not boolean else ()
+            patterns = [re.compile(r'(?<![a-z0-9_.-])'+re.escape(anchor)+r'(?![a-z0-9_/-]|\.[a-z0-9])')
+                        for anchor in anchors]
             expressions = re.findall(r'"([^"]+)"|\b(AND|OR|NOT)\b|([^\s"]+)', query)
             def literal_match(body):
+                if anchors:
+                    folded = body.replace('\\', '/').casefold()
+                    return all(pattern.search(folded) for pattern in patterns)
                 if not boolean:
                     return True
                 # Explicit literal Boolean expressions use OR groups of AND/NOT terms.
@@ -540,10 +583,45 @@ class MemoryRuntime:
                     if count:
                         idf = math.log(1 + (len(notes)-df[term]+0.5)/(df[term]+0.5))
                         score += idf * count * 2.2 / (count + 1.2*(0.25+0.75*lengths[pid]/avg))
-                if score or (boolean and literal_match(body)):
+                if score or ((boolean or anchors) and literal_match(body)):
                     lexical.append((score or 0.001, pid))
             lexical.sort(reverse=True)
-            dense = self._dense(query, notes) if self.models and mode != 'text' and not boolean else []
+            routing = None
+            novel_ids = set()
+            if mode == 'adaptive':
+                lexical_ids = {pid for _, pid in lexical}
+                strong = any(len(terms & counters[pid].keys()) >= 0.8 * len(terms)
+                             for _, pid in lexical[:5]) if terms else bool(lexical)
+                routing = {'route':'lexical_exact' if boolean or anchors else 'lexical_sufficient',
+                           'model_attempted':False,'lexical_total':len(lexical),'new_candidates':0,
+                           'passages':0,'semantic_limited':False}
+                dense = []
+                if not (boolean or anchors or strong):
+                    if not allow_semantic:
+                        routing['route'] = 'lexical_batch_limit'
+                    elif not self.models:
+                        routing['route'] = 'lexical_model_unavailable'
+                    else:
+                        routing.update(route='lexical_no_semantic_gain',model_attempted=True)
+                        selected = [by_id[pid] for _,pid in lexical[:8]]
+                        selected_ids = {note['permalink'] for note in selected}
+                        selected += sorted((note for note in notes if note['permalink'] not in selected_ids),
+                                           key=lambda note:(note['date'],note['permalink']),reverse=True)[:16-len(selected)]
+                        bound = {'passages':0,'limited':len(selected)<len(notes),'deadline':time.monotonic()+6}
+                        try:
+                            recovered = self._dense(query, selected, bound)
+                            novel_ids = {pid for _,pid in recovered} - lexical_ids
+                            if novel_ids:
+                                dense = recovered
+                                routing.update(route='semantic_candidates_added',new_candidates=len(novel_ids))
+                            else:
+                                self._passages.clear()
+                        except Exception:
+                            self._passages.clear()
+                            routing['route'] = 'lexical_model_unavailable'
+                        routing.update(passages=bound['passages'],semantic_limited=bound['limited'])
+            else:
+                dense = self._dense(query, notes) if self.models and mode != 'text' and not boolean else []
             if mode == 'vector' and not self.models:
                 raise ValueError('Vector retrieval requires the configured multilingual model')
             ranks, reasons = {}, {}
@@ -567,7 +645,7 @@ class MemoryRuntime:
                         if by_id.get(other['permalink'], {}).get('path') == other['path']:
                             adjacency[pid].add(other['permalink'])
             frontier=list(sorted(ranks,key=ranks.get,reverse=True)[:3]);visited=set(frontier)
-            for hop in range(0 if boolean or point else graph_hops):
+            for hop in range(0 if boolean or anchors or point else graph_hops):
                 next_frontier=[]
                 for pid in frontier:
                     for linked in sorted(adjacency[pid]):
@@ -577,15 +655,39 @@ class MemoryRuntime:
                             visited.add(linked);next_frontier.append(linked)
                 frontier=next_frontier
             order = sorted(ranks, key=lambda p: (ranks[p], by_id[p]['date'], p), reverse=True)
-            if self.models and mode != 'text' and order:
-                candidate_count=rerank_limit
+            adaptive_rerank = mode=='adaptive' and bool(dense) and time.monotonic()<bound['deadline']
+            if mode=='adaptive' and dense and not adaptive_rerank:
+                routing['semantic_limited']=True
+            fallback = False
+            if self.models and mode != 'text' and order and (mode != 'adaptive' or adaptive_rerank):
+                candidate_count=min(8,rerank_limit) if mode=='adaptive' else rerank_limit
                 leading = order[:candidate_count]
-                texts = [by_id[p]['title'] + '\n' + self._excerpt(by_id[p], terms) for p in leading]
-                reranked = self.models.rerank(query, texts)
-                if len(reranked) != len(leading):
-                    raise ValueError('Reranker returned incomplete results')
-                order = [p for _,p in sorted(zip(reranked, leading), key=lambda x: (x[0], ranks[x[1]]), reverse=True)] + order[candidate_count:]
-            page_ids = order[(page-1)*limit:page*limit]
+                texts = [(by_id[p]['title'][:160] if mode=='adaptive' else by_id[p]['title'])
+                         + '\n' + self._excerpt(by_id[p], terms) for p in leading]
+                try:
+                    reranked = self.models.rerank(query, texts)
+                    if len(reranked) != len(leading):
+                        raise ValueError('Reranker returned incomplete results')
+                    order = [p for _,p in sorted(zip(reranked, leading), key=lambda x: (x[0], ranks[x[1]]), reverse=True)] + order[candidate_count:]
+                except Exception:
+                    if mode != 'adaptive':
+                        raise
+                    fallback = True
+                    routing.update(route='lexical_model_unavailable',new_candidates=0)
+            window=slice((page-1)*limit,page*limit)
+            if routing and routing['route']=='semantic_candidates_added':
+                visible=len(set(order[window]) & novel_ids)
+                if not visible:
+                    fallback=True
+                    routing.update(route='lexical_no_semantic_gain',new_candidates=0)
+                else:
+                    routing['new_visible']=visible
+            if fallback:
+                order=[pid for _,pid in lexical]
+                ranks={pid:1/(60+rank) for rank,pid in enumerate(order,1)}
+                reasons={pid:{'keyword':rank} for rank,pid in enumerate(order,1)}
+                self._passages.clear()
+            page_ids = order[window]
             results = [{'title': by_id[p]['title'], 'permalink': p, 'path': by_id[p]['path'],
                         'excerpt': self._excerpt(by_id[p], terms), 'date': by_id[p]['date'],
                         'status': by_id[p]['status'], 'scope': by_id[p]['scope'],
@@ -596,7 +698,8 @@ class MemoryRuntime:
                         'source_session':by_id[p]['meta'].get('session_id'),
                         'source_event':by_id[p]['meta'].get('source_event') or by_id[p]['meta'].get('memory_event')} for p in page_ids]
             return {'results': results, 'total': len(order), 'page': page, 'mode': mode,
-                    'model': None if point else getattr(self.models, 'embedding_name', None),
+                    'model': None if point or routing and not routing['model_attempted'] else getattr(self.models, 'embedding_name', None),
+                    **({'routing':routing} if routing else {}),
                     **({'temporal': {**temporal, 'as_of':point.isoformat(timespec='microseconds'),
                                     'basis':'retained_fact_recorded_at'}} if point else {}),
                     **({'catalog_revision':self._query_revision_value()} if include_revision else {}),
@@ -627,6 +730,15 @@ class MemoryRuntime:
                 raise
             from contextrail.note_consolidation import consolidation
         return consolidation(self, **options)
+
+    def personal_profile(self, **options):
+        try:
+            from personal_profile import personal_profile
+        except ModuleNotFoundError as exc:
+            if exc.name != "personal_profile":
+                raise
+            from contextrail.personal_profile import personal_profile
+        return personal_profile(self, **options)
 
     def _excerpt(self,note, terms):
         if note['permalink'] in self._passages:

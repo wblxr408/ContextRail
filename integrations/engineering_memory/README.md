@@ -21,3 +21,5 @@ F05–F08作为一个阶段接入capture_rules.py、ingest_delivery.py、stream_
 G08 的 Rail 前台 `document-import` 直接使用原 `state.sqlite` 的来源与学习队列。既有 `history_import.import_document` 在部署本适配源码并为该环境安装可选解析器后，也接受 PDF、DOCX、XLSX 和 PPTX。两个入口共用结构化版本身份。完整提取回执通过 Rail 前台读取。见 [资料导入与回读](../../QUERY_USE.md#导入本地资料并回读原生记忆)。
 
 I06 的 `consolidation` 通过同一个资源服务提供候选、版本回读和折叠决定。决定存入原 `state.sqlite`，原 Markdown 继续作为来源。部署包含 I07 草稿与整理报告的派生来源识别。见 [可逆整理与规则草稿](../../QUERY_USE.md#可逆整理近重复笔记)。
+
+G01 / I05 通过同一个资源服务提供 `personal_profile` 与自适应 `recall`。偏好的确认和撤销复用原事实记录。自适应召回只在需要时调用原模型。见 [偏好与检索](../../QUERY_USE.md#在启动简报中使用个人默认偏好)。

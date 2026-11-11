@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 66/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 68/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -109,3 +109,11 @@ Windows 本机 4 项集中验收和 wheel 构建通过。旧记忆入口在隔�
 Windows 本机 4 项集中验收和 wheel 构建通过。通过实际回环 RPC 核对笔记分组与版本变化，在副本实际应用正向及反向补丁。隔离部署验证折叠决定在重开原库后仍可读并可撤销。实际共享服务接线使用原部署流程。见 [整理与规则草稿](QUERY_USE.md#可逆整理近重复笔记)。
 
 交付分支 `codex/reversible-memory-review`。
+
+## 第十七模块 G01 / I05
+
+用户原话、工作区边界、主题覆盖和撤销贯通个人默认视图与启动简报。统一查询可显式启用自适应检索，词法先行，在同页新增候选时保留有预算的语义结果。
+
+Windows 本机 3 项集中验收和 wheel 构建通过。覆盖实际回环 RPC、原生 Hook、跨项目隔离、撤销幂等、精确路径及错误码、批次上限和模型失败回退。隔离部署验证重开原库后的默认和离线错误码回读。对原共享模型的一篇已知笔记做定点对照，关键词直接命中，同义查询通过语义补充找回。见 [偏好与检索](QUERY_USE.md#在启动简报中使用个人默认偏好)。
+
+交付分支 `codex/personal-memory-retrieval`。

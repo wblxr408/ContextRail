@@ -58,6 +58,11 @@ def _artifact(value):
         kind='note_consolidation_projection'
         if isinstance(value.get('group_id'),str):
             refs.append('note-consolidation:'+value['group_id'])
+    elif schema=='contextrail.personal-profile/v1' and (
+            isinstance(value.get('entries'),list) or value.get('action') in ('set','revoke')):
+        kind='personal_profile_projection'
+        if isinstance(value.get('event_id'),str):
+            refs.append(value['event_id'])
     elif schema=='contextrail.resume-intent.v1' and isinstance(value.get('anchors'),dict) and value.get('coverage')=='declared_anchors_only_not_all_user_history':kind='bridge_projection'
     elif schema=='contextrail.user-intent-source.v1' and isinstance(value.get('source'),dict) and isinstance(value.get('loss'),dict):kind='native_event_projection'
     elif schema in {'contextrail.resume-candidates.v1','contextrail.resume-offer.v1','contextrail.resume-accepted.v1'} and isinstance(value.get('scope',value.get('lease',value.get('resume_intent'))),dict):kind='recovery_management'

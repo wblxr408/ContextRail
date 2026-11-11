@@ -58,9 +58,14 @@ async def run_stdio(tools: ContextTools):
                     tools._keys(arguments,required={'snapshot'},optional={'budget','prefer_frequent_reads'})
                     budget=arguments.get('budget',default_packet_budget);integer(budget,1)
                     if budget>tools.max_read_bytes:raise InvalidRequest('Packet context budget exceeds the bound reader limit.')
-                    return BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(
+                    packet = BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(
                         arguments['snapshot'], budget=budget,
                         prefer_frequent_reads=arguments.get('prefer_frequent_reads', False))
+                    if tools.query_binding is not None:
+                        from .federation import bound_sources
+                        from .profile_brief import attach_profile
+                        packet = attach_profile(packet,bound_sources(tools),packet['context']['task'],budget)
+                    return packet
                 return tools.call(name,arguments)
             from .accounting import HostAccounting
             if name not in {'context.metrics','context.efficiency','context.read_heat'}:

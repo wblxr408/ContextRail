@@ -191,3 +191,34 @@ contextrail experience-rule-draft --workspace D:/ContextRail --task my-task --se
 输出包含独立会话证据、目标路径、疑似冲突及其行号、`diff` 和 `reverse_diff`。冲突提示来自目标与上层项目规则的文本重合，需要人工判断。已否决的证据要用 `--reconsider` 显式重看，草稿会保留上次否决理由。证据版本变化时需重新审阅。
 
 规则草稿由用户审阅后自行采用。采用后可对同一变更使用反向补丁撤销。原学习入口识别规则稿与整理报告为派生视图，保持证据和执行规则的独立性。参考来源是 ai-memory 的设计提案。 [规则提升设计](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/docs/design-rules-promotion.md)
+
+## 在启动简报中使用个人默认偏好
+
+既有记忆服务应用本版适配后，在可信来源绑定加 `"personal_profile": true`。普通 `brief`、Bridge 包及绑定的原生启动 Hook 会在预算有余量时附上 `personal_profile`。通过 `client-prepare --query-binding` 将该配置接到客户端。优先保留当前任务材料和现有历史返回。
+
+视图从原记忆中读取带用户原话的已保留偏好。项目偏好留在原工作区。只有明确设为全局的记录能跨项目使用。项目中同主题的用户决定、当前任务中明确出现的主题及宿主配置 `profile_exclude` 中的主题会让默认让位。自由文本冲突提示采用主题匹配，始终以当前用户要求和项目规则为准。普通手写笔记如果缺少结构化用户来源或明确适用范围，需要显式记录后才进入默认视图。 [ai-memory 跨项目 profile](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/docs/cross-project-profile.md)
+
+```powershell
+'{"action":"view"}' |
+    contextrail personal-profile --workspace D:/ContextRail --task my-task --session owner --query-binding D:/path/sources.json
+```
+
+用同一 `subject` 和新的 `event_id` 可更正默认。提交 `set` 或 `revoke` 时要附上用户原话 `statement`、适用范围 `scope` 与当前所有者的 `--epoch`。跨项目写入需显式使用 `"scope":"global"`。原样重送复用既有来源事件。
+
+```json
+{
+  "action": "revoke",
+  "scope": "global",
+  "event_id": "withdraw-review-default-1",
+  "subject": "review cadence",
+  "statement": "我撤销之前所有项目默认简短评审的偏好。"
+}
+```
+
+## 按需复用现有语义检索
+
+统一查询的绑定默认继续使用 `"memory_mode":"text"`。验证过自己的查询场景后，可以显式改为 `"memory_mode":"adaptive"`。先走词法，路径、文件名、常见错误码、引号和布尔查询走精确通道。已有一条前列词法结果覆盖至少 80% 的词项时直接返回。
+
+词法线索不足时，可复用原共享模型，最多查看 16 篇候选、64 个段落窗口并重排 8 项。一次批量查询最多尝试两次语义检索。单次尝试在段落间检查软期限。语义结果要在当前页增加候选才保留，模型不可用或当前页无增益时返回词法结果。`sources.memory.coverage.routing` 给出走过的路径、尝试状态与覆盖边界。旧服务缺少自适应入口时回退到现有词法接口。 [ai-memory 词法检索实现](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/crates/ai-memory-store/src/fts_query.rs)
+
+本机实测限定到一篇已知偏好笔记。`Codex` 的词法检索命中，`云上编程` 的词法检索为空，现有共享 MiniLM 路径找回同一笔记。这条对照用于确认一个可复现的语义收益场景。

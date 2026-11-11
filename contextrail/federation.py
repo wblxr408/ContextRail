@@ -147,6 +147,7 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
 
     def group(source):
         db=None;memory=None;revision=None;materials=None
+        adaptive_left=2
         try:
             if source=='events':
                 db=connect_events(binding,min(deadline,time.monotonic()+4));revision=event_revision(db,binding)
@@ -161,7 +162,8 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
             for text in unique:
                 if time.monotonic()>deadline:
                     groups[source][text]=_failure('deadline_exceeded');continue
-                key=(source,revision,text,options)
+                adaptive_allowed=source!='memory' or adaptive_left>0
+                key=(source,revision,text,options,adaptive_allowed)
                 cached=None if refresh or (materials is not None and not materials.complete) else state.get(key)
                 if cached is not None:
                     cached['revision_checked_at']=time.time();groups[source][text]=cached;continue
@@ -180,8 +182,13 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
                         hits,total,coverage=materials.search(text,limits[source],offsets[source],source_deadline)
                         stable=materials.complete
                     else:
-                        hits,total,coverage,response_revision=memory.search(text,limits[source],offsets[source],deadline)
-                        stable=response_revision is not None and response_revision==revision
+                        hits,total,coverage,response_revision=memory.search(
+                            text,limits[source],offsets[source],deadline,adaptive_allowed=adaptive_allowed)
+                        routing=coverage.get('routing',{})
+                        if routing.get('model_attempted',False) is not False:
+                            adaptive_left-=1
+                        stable=(response_revision is not None and response_revision==revision
+                                and routing.get('route') not in {'lexical_model_unavailable','lexical_adaptive_unavailable'})
                     consumed=len(hits)
                     for rank,hit in enumerate(hits):hit['source_offset']=offsets[source]+rank
                     # Memory/day precision is supplied by its owner; bounds never

@@ -29,12 +29,14 @@ class QueryBinding:
     snapshot:str|None=None
     document_imports:bool=False
     native_memory_files:tuple=()
+    personal_profile:bool=False
+    profile_exclude:tuple=()
 
     @classmethod
     def parse(cls,value,task,workspace=None):
         if value is None:return None
         allowed={'schema','workspace','task','memory_home','native_sessions','memory_mode','timeout_seconds','snapshot',
-                 'document_imports','native_memory_files'}
+                 'document_imports','native_memory_files','personal_profile','profile_exclude'}
         if not isinstance(value,dict) or value.keys()-allowed or value.get('schema')!=1 or value.get('task')!=task:raise InvalidRequest('Query binding must name the exact task')
         root=value.get('workspace')
         if not isinstance(root,str) or not Path(root).is_absolute():raise InvalidRequest('Query workspace must be an absolute host binding')
@@ -51,7 +53,7 @@ class QueryBinding:
         if len(set(pairs))!=len(pairs):raise InvalidRequest('Native source bindings must be unique')
         if pairs and home is None:raise InvalidRequest('Native sources require their existing memory home')
         mode=value.get('memory_mode','text');timeout=value.get('timeout_seconds',12)
-        if mode not in {'text','hybrid'} or type(timeout) not in (int,float) or not math.isfinite(timeout) or not 0<timeout<=20:raise InvalidRequest('Invalid bound memory mode or timeout')
+        if mode not in {'text','hybrid','adaptive'} or type(timeout) not in (int,float) or not math.isfinite(timeout) or not 0<timeout<=20:raise InvalidRequest('Invalid bound memory mode or timeout')
         snapshot=value.get('snapshot')
         if snapshot is not None:identifier(snapshot)
         documents=value.get('document_imports',False)
@@ -74,8 +76,15 @@ class QueryBinding:
         if (len({item[0] for item in selected_files})!=len(selected_files)
                 or len({item[2] for item in selected_files})!=len(selected_files)):
             raise InvalidRequest('Native memory files and binding IDs must be unique')
+        profile=value.get('personal_profile',False)
+        blocked=value.get('profile_exclude',[])
+        if type(profile) is not bool or (profile and home is None):
+            raise InvalidRequest('Personal defaults require the original memory home')
+        if (not isinstance(blocked,list) or len(blocked)>32
+                or any(not isinstance(topic,str) or not topic.strip() or len(topic)>128 for topic in blocked)):
+            raise InvalidRequest('Bind at most 32 exact project preference exclusions')
         return cls(root,task,Path(home).resolve() if home else None,tuple(pairs),mode,timeout,snapshot,
-                   documents,tuple(selected_files))
+                   documents,tuple(selected_files),profile,tuple(blocked))
 
     @classmethod
     def load(cls,path,task,workspace):
@@ -167,8 +176,21 @@ class ExistingMemory:
         if not isinstance(value,dict) or not isinstance(value.get('revision'),str):raise SourceFailure('memory_revision_unavailable')
         return value['revision']
 
-    def search(self,query,limit,offset,deadline):
-        value=self.invoke('recall',[query],{'scope':self.binding.workspace,'limit':limit,'page':offset//limit+1,'mode':self.binding.memory_mode,'include_revision':True},deadline)
+    def search(self,query,limit,offset,deadline,*,adaptive_allowed=True):
+        mode=self.binding.memory_mode
+        options={'scope':self.binding.workspace,'limit':limit,'page':offset//limit+1,
+                 'mode':mode,'include_revision':True}
+        routing=None
+        if mode=='adaptive' and (not adaptive_allowed or min(self.binding.timeout_seconds,deadline-time.monotonic())<2):
+            options['allow_semantic']=False
+        try:
+            value=self.invoke('recall',[query],options,deadline)
+        except SourceFailure:
+            if options['mode']!='adaptive':
+                raise
+            options.pop('allow_semantic',None)
+            value=self.invoke('recall',[query],{**options,'mode':'text'},deadline)
+            routing={'route':'lexical_adaptive_unavailable','model_attempted':None}
         if not isinstance(value,dict) or not isinstance(value.get('results'),list):raise SourceFailure('invalid_memory_result')
         hits=[]
         for note in value['results'][:limit]:
@@ -186,4 +208,9 @@ class ExistingMemory:
                 'current_task_membership':False,'evidence_role':'retrieved_history','source_score':note.get('score')})
             if isinstance(note.get('relations'),list) and note['relations']:
                 hits[-1]['relations']=note['relations'][:5]
-        return hits,value.get('total',len(hits)),{'scope':'main_workspace_and_applicable_global_history','mode':value.get('mode'),'complete':True},value.get('catalog_revision')
+        coverage={'scope':'main_workspace_and_applicable_global_history','mode':value.get('mode'),'complete':True}
+        routing=routing or value.get('routing')
+        if isinstance(routing,dict):
+            coverage['routing']=routing
+            coverage['complete']=not routing.get('semantic_limited',False)
+        return hits,value.get('total',len(hits)),coverage,value.get('catalog_revision')
