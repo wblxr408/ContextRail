@@ -19,7 +19,7 @@ from .store import Store
 PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "bridge-import", "bridge-packet",
                     "bridge-receipt", "status", "deliverable-register", "deliverables", "deliverable", "file-history", "history-details", "history-neighborhood", "checkpoints", "search", "continue", "explain",
                     "client-prepare", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "extract-result", "batch-read",
-                    "search-indexed", "index-status", "index-rebuild", "result-search",
+                    "search-indexed", "index-status", "index-rebuild", "index-recover", "backup-create", "result-search",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history")
 
@@ -93,6 +93,9 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("demo", help="Run an isolated A -> B -> A local simulation")
     commands.add_parser("tools", help="Print host-neutral read tool definitions")
+    restore = commands.add_parser("backup-restore", help="Restore a local backup to a new review directory")
+    restore.add_argument("--backup", type=Path, required=True)
+    restore.add_argument("--output", type=Path, required=True)
     for command in PROJECT_COMMANDS:
         sub = commands.add_parser(command)
         sub.add_argument("--workspace", type=Path, default=Path.cwd())
@@ -109,9 +112,15 @@ def parser() -> argparse.ArgumentParser:
         if command in ("project-info", "client-prepare"):
             sub.add_argument("--hook-bytes", type=int)
         if command in {'mcp','query','status','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
-        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history"):
+        if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history", "index-recover", "backup-create"):
             sub.add_argument("--session", required=True)
-        if command == "project-init":
+        if command in ("backup-create", "index-recover"):
+            sub.add_argument("--output", type=Path, required=True)
+            if command == "backup-create":
+                sub.add_argument("--include-code", action="store_true", help="Archive committed Git HEAD")
+                sub.add_argument("--knowledge-root", type=Path, help="Explicit Markdown root")
+                sub.add_argument("--queue-db", type=Path, help="Explicit complete engineering-memory state database")
+        elif command == "project-init":
             sub.add_argument("--objective", required=True)
             sub.add_argument("--provider", default="host")
             sub.add_argument("--model", default="external")
@@ -328,6 +337,15 @@ def project_command(args):
     packet_budget = args.budget if getattr(args, 'budget', None) is not None else config.context_bytes
     if args.command == "project-info":
         print(canonical(config.describe()))
+        return
+    if args.command == "backup-create":
+        from .maintenance import create_backup
+        print(canonical(create_backup(config, args.output, knowledge_root=args.knowledge_root,
+                                      queue_db=args.queue_db, include_code=args.include_code)))
+        return
+    if args.command == "index-recover":
+        from .maintenance import recover_evidence_index
+        print(canonical(recover_evidence_index(config, args.output)))
         return
     if args.command == "project-init":
         config.store.parent.mkdir(parents=True, exist_ok=True)
@@ -621,6 +639,9 @@ def main(argv: list[str] | None = None) -> int:
             print(canonical(demo()))
         elif args.command == "tools":
             print(canonical(ContextTools.definitions()))
+        elif args.command == "backup-restore":
+            from .maintenance import restore_backup
+            print(canonical(restore_backup(args.backup, args.output)))
         elif args.command in PROJECT_COMMANDS:
             project_command(args)
         else:

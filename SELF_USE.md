@@ -39,6 +39,35 @@ hook_bytes = 24576
 
 `context.required` 目前声明必读路径，供后续 Bridge/启动注入消费，不会自动打开文件。`capture.ignore` 使用相对工作区的 glob（`/` 分隔，`*` 可跨目录；Windows 不区分大小写）。接收器检查 cwd 及宿主声明的 `source_paths`，命中忽略规则或越出工作区就拒绝整条结果。工具输出可能来自任意外部来源；接收器无法从自由文本推断它读了哪些文件，宿主应如实提供来源。它不递归扫描目录。
 
+## 本地备份与故障恢复
+
+`backup-create` 将整份 Rail SQLite 库保存到新目录。SQLite 在线备份包含已提交的 WAL 数据，并保留任务、快照、原文、动作、交接和各任务作用域。若项目使用了 TOML，原文件另存为 `project.toml`。
+
+```powershell
+contextrail backup-create --workspace 'D:/我的项目' --task my-task --output 'D:/Backups/项目-01'
+contextrail backup-restore --backup 'D:/Backups/项目-01' --output 'D:/Backups/项目-01-恢复'
+contextrail status --workspace 'D:/我的项目' --task my-task --session owner --store 'D:/Backups/项目-01-恢复/rail.sqlite3'
+```
+
+输出目录必须是父目录下的新名字。`manifest.json` 在其他文件写完后发布，列出各类数据和原任务作用域。按需要给 `backup-create` 加上以下选项。
+
+| 选项 | 包含的内容 |
+| --- | --- |
+| `--include-code` | `source.zip`，Git HEAD 中可归档的文件，遵循项目的归档属性 |
+| `--knowledge-root <目录>` | `knowledge/`，指定目录下的 Markdown 原文，保留相对路径及行尾，跳过隐藏项和符号链接或 junction |
+| `--queue-db <文件>` | `queue.sqlite3`，显式指定的工程记忆 `state.sqlite` 一致快照。复制整份队列库，包括其他工作区的数据 |
+
+各 SQLite 库独立取提交快照。Git、Markdown、Rail 和队列之间没有共同事务。需要同一时点时，先停止相关写入再取备份。项目以外的个人配置、凭据、未提交代码、原生会话日志、Bridge 外部原文件和模型缓存均需各自管理。已有 Rail 原文引用仍可用，后续编译 Bridge 任务包时仍会按既有规则验证外部来源。
+
+恢复时先确认代码和配置版本，再按需恢复知识 Markdown。用原工作区与 task 通过 `--store` 指向审阅副本，核对原任务、要求、动作终态和交接状态。回执中 `selected_task_review` 列出当前任务前 20 个待核对动作及未完成交接。用既有现场记录和宿主结果逐项确认，然后再切换任务库。恢复的记忆队列也先审阅待处理项，确认实际结果后再接回原服务。命令只输出恢复副本，默认 `manual_review`，不会启动客户端、记忆服务或重放动作。
+
+如果当前库的**证据 FTS 或 Rail 时间线**损坏，运行下面的命令。它保留原库，复制可读取的权威表，再从副本的原文重建派生索引。原文或权威表有错误时停止并给出原因，改从已知正常的备份恢复。工程记忆的时间线继续使用原 listener 的 `timeline-reindex`，按原工作区和原生会话选择。
+
+```powershell
+contextrail index-recover --workspace 'D:/我的项目' --task my-task --output 'D:/Backups/项目-索引审阅'
+contextrail search-indexed --workspace 'D:/我的项目' --task my-task --session owner --store 'D:/Backups/项目-索引审阅/rail.sqlite3' --query '已知原文'
+```
+
 ## 交给接收器的结果
 
 `observed-result.json` 示例：

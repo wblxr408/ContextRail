@@ -170,22 +170,28 @@ def status(store, scope):
             "coverage": "current_readable_utf8_within_declared_limits", "reasons": reasons}
 
 
+def rebuild_contents(store, scope):
+    """Rebuild one partition inside its caller's authorized write transaction."""
+    if not store.fts_available:
+        raise Unavailable("SQLite FTS5 is unavailable; original evidence remains readable.")
+    store.db.execute("DELETE FROM evidence_fts WHERE scope=?", (scope.key,))
+    store.db.execute("DELETE FROM evidence_index_state WHERE scope=?", (scope.key,))
+    rows = store.db.execute("SELECT a.* FROM heads h JOIN artifacts a "
+                            "ON a.scope=h.scope AND a.name=h.name AND a.revision=h.revision WHERE h.scope=? ORDER BY a.name",
+                            (scope.key,))
+    now = store.clock()
+    for row in rows:
+        if row["invalidated"] or row["expires"] is not None and row["expires"] <= now:
+            _state(store, scope.key, row["name"], row["revision"], row["sha256"], "unavailable", "invalidated_or_expired")
+            continue
+        artifact = store.get(scope, Ref(row["name"], row["revision"]))
+        update(store, scope.key, row["name"], row["revision"], row["sha256"], artifact.content, row["media_type"])
+
+
 def rebuild(store, scope, lease):
     with store.transaction():
         store._lease(scope, lease)
-        if not store.fts_available:
-            raise Unavailable("SQLite FTS5 is unavailable; original evidence remains readable.")
-        store.db.execute("DELETE FROM evidence_fts WHERE scope=?", (scope.key,))
-        store.db.execute("DELETE FROM evidence_index_state WHERE scope=?", (scope.key,))
-        rows = store.db.execute("SELECT a.* FROM heads h JOIN artifacts a "
-                                "ON a.scope=h.scope AND a.name=h.name AND a.revision=h.revision WHERE h.scope=? ORDER BY a.name", (scope.key,)).fetchall()
-        now = store.clock()
-        for row in rows:
-            if row["invalidated"] or row["expires"] is not None and row["expires"] <= now:
-                _state(store, scope.key, row["name"], row["revision"], row["sha256"], "unavailable", "invalidated_or_expired")
-                continue
-            artifact = store.get(scope, Ref(row["name"], row["revision"]))
-            update(store, scope.key, row["name"], row["revision"], row["sha256"], artifact.content, row["media_type"])
+        rebuild_contents(store, scope)
         result = status(store, scope)
         store._event(scope, "evidence_index.rebuilt", indexed=result["indexed"], pending=result["pending"], indexer=INDEXER)
         return result

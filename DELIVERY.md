@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 52/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 54/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -45,3 +45,9 @@
 统一 CLI、Bridge 和原生接线的项目预算，支持个人默认值、项目覆盖和单次覆盖。升级在原位置更新受管 Hook，移除按回执保留原配置和记忆流程。Windows 上 11 项消费者与受影响回归通过，两端使用真实 MCP stdio 读取任务包和冷页，wheel 构建通过。验收使用临时工作区及符合既有协议的记忆 Hook。见 [项目配置](SELF_USE.md#项目配置与初始化)和[客户端接线](NATIVE_CLIENTS.md#任意自用任务的准备与应用)。
 
 交付分支 `codex/project-config-ownership`。
+
+## 第八模块 H06 / H07
+
+按角色在线备份 Rail、配置、已提交代码、Markdown 与可选记忆队列。恢复输出单独的审阅目录，保留快照、必读引用、动作终态与待核对动作。Rail 索引损坏时从原文重建证据 FTS 和时间线；缺失权威表或非法动作状态会拒绝恢复。Windows 本机 6 项消费者与 wheel 构建通过，队列验收使用有实际 WAL 和未提交写入的临时 SQLite 库。见 [恢复操作](SELF_USE.md#本地备份与故障恢复)。
+
+交付分支 `codex/local-maintenance-recovery`。
