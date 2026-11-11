@@ -106,3 +106,23 @@ MCP对应`context.status`。它显示task/version/owner、存储中的当前需�
 原记忆服务在空闲回收后重新加载，可能超过本地查询期限（本机绑定20秒、整批合作式期限24秒）。此时memory槽明确返回unavailable，task/events仍可用；原服务就绪后可再次查询。text只表示不用语义推理，原服务仍可能有冷启动成本；本阶段没有调整其资源回收策略。
 
 本阶段统一消费者在tests/test_query_stage.py，应用及实际验收记录在openspec/changes/federated-context-query/verification.md。已运行的旧批次不在本阶段验收范围内。
+
+## 跨会话经验审阅
+
+用可信来源绑定选择同一工作区的 2–4 个原生会话。需要限定日期时，传入带时区的 `--since`（含）和 `--until`（不含）。从项目当前任务执行：
+
+```powershell
+contextrail experience-review --workspace D:/ContextRail --task my-task --session owner --query-binding D:/path/experience-sources.json --response-bytes 16384
+```
+
+审阅列出重复完成的步骤、重复出现的相邻两步操作和同一操作的重复失败。每个候选至少有两个独立原生会话的证据。Shell 按命令和执行环境匹配，桌面代码工具按捕获的脚本匹配。失败分类来自原时间线的启发式规则。候选包含调用和结果的精确 `memory.stream_get` 引用，可以通过[原生事件回读](NATIVE_EVENTS_USE.md)核对。审阅只读取已捕获的事件，输出供人工判断。
+
+每个会话在选定时间范围内检查最近捕获的最多 400 条工具事件。`coverage` 给出较早事件是否省略，以及有多少次调用缺少可用的结果。桌面代码工具的包装层显示完成时，仍需捕获明确的子进程结果才能计入。未捕获、被策略隐去、超限、尚在运行或无法确认结果的调用，均留在覆盖信息中。用 `next_offset` 翻候选页，或缩小时间范围回看较早的事件。
+
+要否决候选，用当前任务所有者和租约 epoch，带上审阅输出中的 `id`、`evidence_version` 以及同一绑定和时间范围。
+
+```powershell
+contextrail experience-reject --workspace D:/ContextRail --task my-task --session owner --epoch 0 --query-binding D:/path/experience-sources.json --candidate <id> --evidence-version <evidence_version> --reason "这个步骤只适用于一次性迁移"
+```
+
+原记忆库保留该次决定的理由、时间和证据版本。原样重送返回原决定。相同证据及其子集继续隐藏，审阅返回 `suppressed_count`。新证据会重提候选，并给出 `new_evidence_event_ids` 和上次否决理由。用户也可以在审阅命令中传入 `--reconsider <id>`，把仍有证据的指定候选放到结果首位，同时保留原决定。

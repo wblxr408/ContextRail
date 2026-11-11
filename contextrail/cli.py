@@ -23,7 +23,8 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "web-cache-store", "web-cache-get",
                     "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
-                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history")
+                    "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history",
+                    "experience-review", "experience-reject")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -136,6 +137,20 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--role", required=True, choices=('user','assistant','tool','document','lifecycle','evidence'))
         elif command=='query':
             sub.add_argument('--input',type=Path,help='JSON request file; omit to read stdin')
+        elif command in {"experience-review", "experience-reject"}:
+            sub.add_argument("--query-binding", type=Path, required=True,
+                             help="Trusted workspace and exact native-session selection")
+            sub.add_argument("--since", help="Inclusive source time with explicit time zone")
+            sub.add_argument("--until", help="Exclusive source time with explicit time zone")
+            if command == "experience-review":
+                sub.add_argument("--reconsider", help="Show this explicitly requested candidate again")
+                sub.add_argument("--offset", type=int, default=0)
+                sub.add_argument("--limit", type=int, default=20)
+            else:
+                sub.add_argument("--epoch", type=int, required=True)
+                sub.add_argument("--candidate", required=True)
+                sub.add_argument("--evidence-version", required=True)
+                sub.add_argument("--reason", required=True)
         elif command=='metrics':
             sub.add_argument('--offset',type=int,default=0)
             sub.add_argument('--limit',type=int,default=20)
@@ -414,6 +429,21 @@ def project_command(args):
             target = Target(args.session, args.provider, args.model)
             lease = store.create_task(config.scope, target, args.objective, allowed_providers=(args.provider,))
             print(canonical({**config.describe(), "lease": asdict(lease)}))
+        elif args.command in {"experience-review", "experience-reject"}:
+            from .experience import reject_experience, review_experiences
+            window = {"since": args.since, "until": args.until}
+            if args.command == "experience-review":
+                store.session(config.scope, args.session)
+                output = review_experiences(query_binding, **window, reconsider=args.reconsider,
+                                            offset=args.offset, limit=args.limit,
+                                            budget=min(config.read_bytes, config.response_bytes))
+            else:
+                # Hold the task lease across the write to the existing memory store.
+                with store.transaction():
+                    store._lease(config.scope, Lease(args.session, args.epoch))
+                    output = reject_experience(query_binding, args.candidate,
+                                               args.evidence_version, args.reason, **window)
+            print(canonical(output))
         elif args.command=='query':
             try:
                 raw=args.input.read_bytes() if args.input else sys.stdin.buffer.read(65537)

@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 60/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 62/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -77,3 +77,11 @@ Windows 本机 5 项集中验收和 wheel 构建通过。PowerShell 通过中文
 事实收录时间和事件时间分开，知识页按成功发布窗口读取不可变历史。原 Markdown 的 fixes、contradicts、causes 在查询中保留两侧出处和范围。Windows 本地 8 项集中验收及 wheel 构建通过，含独立 vault 的真实回环 RPC。通过只读连接从原库取回一个真实归档知识页，385 字节、4 条来源。实际共享服务部署沿用现有更新流程。见 [记忆版本和关系](GROUNDED_SUMMARY_USE.md#按收录时间回看)。
 
 交付分支 `codex/temporal-memory-relations`。
+
+## 第十三模块 G04 / G05
+
+按指定工作区、会话和时间归纳重复步骤、相邻两步操作与重复失败，返回调用和结果的原事件引用。否决写入原记忆库，保留理由和证据版本。新证据或用户显式重看会给出重新显示的原因。
+
+Windows 本地 4 项集中验收和 wheel 构建通过。临时原生事件库覆盖来源隔离、桌面代码工具的明确退出状态、候选分页、幂等否决和证据变化。只读抽查原库四个会话的近期捕获及三个时间窗口，识别到有明确结果的操作，窗口内未发现满足跨会话重复条件的候选。见 [跨会话经验审阅](QUERY_USE.md#跨会话经验审阅)。
+
+交付分支 `codex/cross-session-experience`。
