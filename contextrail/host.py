@@ -80,6 +80,16 @@ class ContextTools:
             integer(budget,1)
             if budget>self.max_read_bytes:raise InvalidRequest('Query budget exceeds the bound reader limit')
             return query(self,**{**arguments,'budget':budget})
+        if name == "context.material_get":
+            from .federation import bound_sources
+            from .material_sources import material_get
+            self._keys(arguments, required={"ref"}, optional={"start", "end", "budget"})
+            budget = arguments.get("budget", min(16384, self.max_read_bytes))
+            integer(budget, 1)
+            if budget > self.max_read_bytes:
+                raise InvalidRequest("Material response budget exceeds the bound reader limit.")
+            return material_get(bound_sources(self), arguments["ref"], start=arguments.get("start", 0),
+                                end=arguments.get("end"), budget=budget)
         if name=='context.status':
             from .local_status import status
             self._keys(arguments,required=set(),optional={'snapshot','budget'})
@@ -254,13 +264,17 @@ class ContextTools:
              'input_schema':{'type':'object','properties':{'refs':{'type':'array','minItems':1,'maxItems':10,'items':{'type':'object'}},'budget':{'type':'integer','minimum':1024,'maximum':65536}},'required':['refs'],'additionalProperties':False}},
             {'name':'context.history_neighborhood','description':'Read the occurrence-time neighborhood of an exact source ref without task claiming or lease changes.',
              'input_schema':{'type':'object','properties':{'ref':{'type':'object'},'budget':{'type':'integer','minimum':1024,'maximum':65536},'limit':{'type':'integer','minimum':1,'maximum':40}},'required':['ref'],'additionalProperties':False}},
-            {'name':'context.query','description':'Batch search task evidence, explicitly bound native events and existing main memory. Source failures and history roles remain explicit; refresh and exact refs stay available.',
+            {'name':'context.material_get','description':'Read an exact imported document unit or bound native Markdown line from context.query.',
+             'input_schema':{'type':'object','properties':{'ref':{'type':'object'},'start':{'type':'integer','minimum':0},
+                 'end':{'type':'integer','minimum':0},'budget':{'type':'integer','minimum':1,'maximum':65536}},
+                 'required':['ref'],'additionalProperties':False}},
+            {'name':'context.query','description':'Batch search task evidence, bound native events, main memory, and optionally imported documents and native memory.',
              'input_schema':{'type':'object','properties':{
                  'queries':{'type':'array','minItems':1,'maxItems':8,'items':{'type':'string','minLength':1,'maxLength':1024}},
                  'view':{'type':'string','enum':['relevance','timeline']},'budget':{'type':'integer','minimum':2048,'maximum':65536},
                  'source_bytes':{'type':'integer','minimum':2048,'maximum':16384},'refresh':{'type':'boolean'},
-                 'limits':{'type':'object','properties':{s:{'type':'integer','minimum':1,'maximum':20} for s in ('task','events','memory')},'additionalProperties':False},
-                 'offsets':{'type':'object','properties':{s:{'type':'integer','minimum':0,'maximum':10000} for s in ('task','events','memory')},'additionalProperties':False},
+                 'limits':{'type':'object','properties':{s:{'type':'integer','minimum':1,'maximum':20} for s in ('task','events','memory','documents','native_memory')},'additionalProperties':False},
+                 'offsets':{'type':'object','properties':{s:{'type':'integer','minimum':0,'maximum':10000} for s in ('task','events','memory','documents','native_memory')},'additionalProperties':False},
                  'since':{'type':'string'},'until':{'type':'string'}},'required':['queries'],'additionalProperties':False}},
             {'name':'context.status','description':'Explain current task, requirements, observed capture, workspace learning queue, source errors and actual adapter capability evidence; no model call or liveness probe.',
              'input_schema':{'type':'object','properties':{'snapshot':{'type':'string','minLength':1},'budget':{'type':'integer','minimum':2048,'maximum':65536}},'additionalProperties':False}},

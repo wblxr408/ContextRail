@@ -25,7 +25,7 @@ PROJECT_COMMANDS = ("project-info", "project-init", "capture-result", "mcp", "br
                     "bookmark-set", "bookmark-open", "bookmark-list", "bookmark-remove",
                     "directory-sync", "directory-status", "directory-memory-enqueue", "redact-evidence", "event-import", "timeline", "timeline-reindex", "query", "brief", "metrics", "efficiency", "record-request",
                     "recover", "resume-bind", "resume-offer", "resume-accept", "resume-abort", "intent-project", "workscene", "native-history",
-                    "experience-review", "experience-reject", "read-heat")
+                    "experience-review", "experience-reject", "read-heat", "document-import", "material-get")
 
 
 def serve(tools: ContextTools, source: TextIO, sink: TextIO, *, max_request_chars: int = 65536) -> None:
@@ -145,6 +145,15 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--role", required=True, choices=('user','assistant','tool','document','lifecycle','evidence'))
         elif command=='query':
             sub.add_argument('--input',type=Path,help='JSON request file; omit to read stdin')
+        elif command == "document-import":
+            sub.add_argument("--file", type=Path, required=True, help="Explicit PDF, DOCX, XLSX or PPTX in this workspace")
+            sub.add_argument("--epoch", type=int, required=True)
+            sub.add_argument("--memory-home", type=Path, default=Path.home() / ".codex/services/engineering-memory")
+        elif command == "material-get":
+            sub.add_argument("--query-binding", type=Path, required=True)
+            sub.add_argument("--ref", required=True, help="Exact material Ref from the query result as JSON")
+            sub.add_argument("--start", type=int, default=0)
+            sub.add_argument("--end", type=int)
         elif command in {"experience-review", "experience-reject"}:
             sub.add_argument("--query-binding", type=Path, required=True,
                              help="Trusted workspace and exact native-session selection")
@@ -444,6 +453,22 @@ def project_command(args):
             target = Target(args.session, args.provider, args.model)
             lease = store.create_task(config.scope, target, args.objective, allowed_providers=(args.provider,))
             print(canonical({**config.describe(), "lease": asdict(lease)}))
+        elif args.command == "document-import":
+            from .document_memory import import_to_existing_memory
+            with store.transaction():
+                store._lease(config.scope, Lease(args.session, args.epoch))
+                output = import_to_existing_memory(args.memory_home, args.file, config.workspace)
+            print(canonical(output))
+        elif args.command == "material-get":
+            try:
+                ref = json.loads(args.ref)
+            except (ValueError, RecursionError):
+                raise InvalidRequest("Material Ref must be JSON.") from None
+            tools = ContextTools(store, config.scope, args.session, max_read_bytes=config.read_bytes,
+                                 query_binding=query_binding)
+            print(canonical(tools.call("context.material_get", {
+                "ref": ref, "start": args.start, "end": args.end,
+                "budget": min(config.read_bytes, config.response_bytes)})))
         elif args.command in {"experience-review", "experience-reject"}:
             from .experience import reject_experience, review_experiences
             window = {"since": args.since, "until": args.until}

@@ -13,7 +13,8 @@ from .models import Ref,canonical,unicode_text
 from .query_sources import QueryBinding,SourceFailure,ExistingMemory,connect_events,event_revision,events_search
 from ._vendor.context_mode_unified import merge_sources
 
-SOURCES=('task','events','memory')
+BASE_SOURCES=('task','events','memory')
+SOURCES=(*BASE_SOURCES,'documents','native_memory')
 
 
 class QueryState:
@@ -130,25 +131,38 @@ def task_search(tools,query,limit,offset,source_bytes):
 
 
 def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384,source_bytes=8192,refresh=False,since=None,until=None):
+    requested_sources={source for options in (limits,offsets) if isinstance(options,dict) for source in options}
     queries,limits,offsets=validate(queries,view,limits,offsets,budget,source_bytes,refresh,since,until)
     binding=bound_sources(tools);state=state_for(tools);deadline=time.monotonic()+24
+    active=list(BASE_SOURCES)
+    if 'documents' in requested_sources or (binding and binding.document_imports):
+        active.append('documents')
+    if 'native_memory' in requested_sources or (binding and binding.native_memory_files):
+        active.append('native_memory')
+    limits={source:limits[source] for source in active}
+    offsets={source:offsets[source] for source in active}
     unique=list(dict.fromkeys(queries));request_id='query-'+uuid4().hex
     config_key=repr(binding);options=(view,tuple(limits.items()),tuple(offsets.items()),source_bytes,since,until,config_key)
-    groups={source:{} for source in SOURCES}
+    groups={source:{} for source in active}
 
     def group(source):
-        db=None;memory=None;revision=None
+        db=None;memory=None;revision=None;materials=None
         try:
             if source=='events':
                 db=connect_events(binding,min(deadline,time.monotonic()+4));revision=event_revision(db,binding)
             elif source=='memory':
                 memory=ExistingMemory(binding);revision=memory.revision(deadline)
+            elif source in {'documents','native_memory'}:
+                from .material_sources import DocumentsView, NativeMemoryView
+                reader=DocumentsView if source=='documents' else NativeMemoryView
+                materials=reader(binding,source_deadline)
+                revision=materials.revision
             else:revision=task_revision(tools)
             for text in unique:
                 if time.monotonic()>deadline:
                     groups[source][text]=_failure('deadline_exceeded');continue
                 key=(source,revision,text,options)
-                cached=None if refresh else state.get(key)
+                cached=None if refresh or (materials is not None and not materials.complete) else state.get(key)
                 if cached is not None:
                     cached['revision_checked_at']=time.time();groups[source][text]=cached;continue
                 try:
@@ -162,6 +176,9 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
                         db.set_progress_handler(lambda:int(time.monotonic()>min(deadline,source_deadline)),1000)
                         hits,total,coverage=events_search(db,binding,text,limits[source],offsets[source],view,since,until)
                         stable=True
+                    elif materials is not None:
+                        hits,total,coverage=materials.search(text,limits[source],offsets[source],source_deadline)
+                        stable=materials.complete
                     else:
                         hits,total,coverage,response_revision=memory.search(text,limits[source],offsets[source],deadline)
                         stable=response_revision is not None and response_revision==revision
@@ -195,11 +212,12 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
     # Main R connection stays on its owning thread; only external source groups
     # use workers, with their own SQLite/RPC connections and a shared deadline.
     source_deadline=min(deadline,time.monotonic()+4)
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        events_future=pool.submit(group,'events');memory_future=pool.submit(group,'memory')
-        group('task');events_future.result();memory_future.result()
+    with ThreadPoolExecutor(max_workers=len(active)-1) as pool:
+        workers=[pool.submit(group,source) for source in active if source!='task']
+        group('task')
+        for worker in workers:worker.result()
     observed_errors=set()
-    for source in SOURCES:
+    for source in active:
         for value in groups[source].values():
             if value['status']=='unavailable':
                 code=value['error']['code']
@@ -210,7 +228,7 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
     output={'schema':'contextrail.federated-query.v1','request_id':request_id,'view':view,'queries':[],
         'scope':{'task':tools.scope.task,'reader_session':tools.session_id},
         'ranking':'reciprocal_source_rank' if view=='relevance' else 'matching_candidates_by_known_occurrence_unknown_last',
-        'history_boundary':'events_and_memory_are_history_not_current_task_facts',
+        'history_boundary':'external_sources_are_history_not_current_task_facts' if len(active)>3 else 'events_and_memory_are_history_not_current_task_facts',
         'bound_sources':{'workspace':binding.workspace if binding else None,
             'native_sessions':[{'client':c,'session':s} for c,s in binding.native_sessions] if binding else [],
             'memory_project':'main' if binding and binding.memory_home else None},
@@ -220,20 +238,23 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
     first_positions={}
     hit_delivery_keys={}
     for position,text in enumerate(queries):
-        sources={source:copy.deepcopy(groups[source][text]) for source in SOURCES}
-        fingerprint=(text,options,tuple((s,sources[s]['status'],repr(sources[s].get('revision'))) for s in SOURCES))
+        sources={source:copy.deepcopy(groups[source][text]) for source in active}
+        fingerprint=(text,options,tuple((s,sources[s]['status'],repr(sources[s].get('revision'))) for s in active))
         previous=state.history.get(fingerprint)
         duplicate=text in first_positions
-        merged=merge_sources({s:sources[s]['hits'] for s in SOURCES},view)
+        merged=merge_sources({s:sources[s]['hits'] for s in active},view)
         for hit in merged:
             delivery=(text,options,hit['origin'],hit['id'],repr(sources[hit['origin']].get('revision')))
             hit_delivery_keys[id(hit)]=delivery
             shown=sources[hit['origin']].get('cache_hit',False) and delivery in state.delivered
             hit['already_shown']=shown
             from .file_history import navigation
-            hit['navigation']=navigation(hit['ref'])
+            if hit['origin'] in {'documents','native_memory'}:
+                hit['navigation']={'details':{'tool':'context.material_get','arguments':{'ref':hit['ref']}}}
+            else:
+                hit['navigation']=navigation(hit['ref'])
             if shown or duplicate:hit.update(preview='',preview_truncated=True)
-        summaries={s:{k:v for k,v in sources[s].items() if k!='hits'} for s in SOURCES}
+        summaries={s:{k:v for k,v in sources[s].items() if k!='hits'} for s in active}
         entry={'query':text,'hits':merged,'sources':summaries,'partial':any(s['status']!='ok' or s.get('coverage',{}).get('complete') is False for s in sources.values()),
             'repeat_of':previous if previous and not refresh else None,'omitted_by_response_budget':0}
         if duplicate:entry['coalesced_with']=first_positions[text];entry['repeat_of']=request_id
@@ -260,7 +281,7 @@ def query(tools,*,queries,view='relevance',limits=None,offsets=None,budget=16384
             target['hits'].pop();target['omitted_by_response_budget']+=1;target['partial']=True
         metrics()
     for result in output['queries']:
-        for source in SOURCES:
+        for source in active:
             summary=result['sources'][source];shown=sum(h['origin']==source for h in result['hits'])
             summary['shown']=shown
             raw=groups[source][result['query']]

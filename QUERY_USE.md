@@ -126,3 +126,41 @@ contextrail experience-reject --workspace D:/ContextRail --task my-task --sessio
 ```
 
 原记忆库保留该次决定的理由、时间和证据版本。原样重送返回原决定。相同证据及其子集继续隐藏，审阅返回 `suppressed_count`。新证据会重提候选，并给出 `new_evidence_event_ids` 和上次否决理由。用户也可以在审阅命令中传入 `--reconsider <id>`，把仍有证据的指定候选放到结果首位，同时保留原决定。
+
+## 导入本地资料并回读原生记忆
+
+在运行导入命令的 Python 环境安装可选的文档解析器。查询和回读已存档文本可用核心安装。
+
+```powershell
+uv pip install '.[documents]'
+contextrail document-import --workspace D:/ContextRail --task my-task --session owner --epoch 0 --file docs/reference.pdf
+```
+
+导入接受工作区内显式指定的 PDF、DOCX、XLSX 和 PPTX。项目捕获规则在读取前生效。资料按工作区、路径、原始内容版本和提取契约存档，同一版本重试不会再入学习队列。回执给出排队数和提取损失。排队之后由原有记忆服务处理，知识收录状态仍需单独观察。
+
+PDF 保留页号，Word 保留正文段落与表格行列，Excel 保留工作表和单元格，PowerPoint 保留幻灯片、形状与表格行列。PDF 使用可提取的文字层，扫描图像需要单独 OCR。Office 图像、备注、嵌套结构或超出上限的内容通过提取边界和损失字段说明。公式保留公式文本及可用的缓存值。缺少缓存时会标明，解析器不会执行公式。旧式二进制 Office 文件可先转为对应的 Open XML 格式。 [PDF 文本提取](https://pypdf.readthedocs.io/en/stable/user/extract-text.html) · [Word 正文接口](https://python-docx.readthedocs.io/en/latest/api/document.html) · [Excel 只读模式](https://openpyxl.readthedocs.io/en/stable/optimized.html) · [PowerPoint 表格](https://python-pptx.readthedocs.io/en/latest/user/table.html)
+
+在已有可信绑定中加需要的来源。以下示例同时启用两类来源。
+
+```json
+{
+  "schema": 1,
+  "workspace": "D:/ContextRail",
+  "task": "my-task",
+  "memory_home": "C:/Users/me/.codex/services/engineering-memory",
+  "document_imports": true,
+  "native_memory_files": [
+    {"id": "claude-project", "client": "claude", "path": "C:/path/to/project/MEMORY.md"}
+  ]
+}
+```
+
+`context.query` 返回 `documents` 和 `native_memory` 两个来源。命中带有 `locator`、版本和 `ref`，可直接交给 `context.material_get` 或终端。
+
+```powershell
+contextrail material-get --workspace D:/ContextRail --task my-task --session owner --query-binding D:/path/sources.json --response-bytes 16384 --ref '<查询返回的 Ref JSON>'
+```
+
+资料回读取原记忆库的脱敏提取版本，原文件后来更新也能打开旧版。原生记忆只读绑定中的精确 Markdown 文件，最多绑定 8 个文件，每个文件最多读取 512 KiB 并检索前 5000 行。来源标记为 `client_auto_memory`，不入学习队列。文件变化时，旧 Ref 会提示重新查询。回读可用 `start`、`end` 指定处理后文本的 UTF-8 字节范围。资料检索最多扫描工作区最近存档的 48 个版本，超限会显示覆盖缺口，仍可用旧 Ref 直接回读。
+
+设计参考了 ai-memory 的本地文档提取和 context-mode 的原生记忆检索。宿主绑定控制本项目的读取范围。 [ai-memory 文档导入](https://github.com/akitaonrails/ai-memory/blob/1c86aebc14addccc7ac875913d565c681bfa4a50/companions/ai-memory-importer/src/document.rs) · [context-mode 原生记忆查询](https://github.com/mksglu/context-mode/blob/a92cf6a77ac02971fb5fafe2155e5ee229491884/src/search/auto-memory.ts)

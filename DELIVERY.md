@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 63/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 64/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -93,3 +93,11 @@ Windows 本地 4 项集中验收和 wheel 构建通过。临时原生事件库�
 Windows 本地 6 项集中验收和 wheel 构建通过。实际 MCP stdio 回读在断开后驱动 CLI 同预算预取。用例覆盖未送达的批量结果、精确 revision 与字节窗口、低热度建议、必读保护和共享依赖组。独立 Basic Memory 读操作没有 Rail 回执，仍在此观测范围之外。见 [按回读热度预取](ACCOUNTING_USE.md#按实际回读热度预取可选材料)。
 
 交付分支 `codex/read-heat-prefetch`。
+
+## 第十五模块 G08
+
+PDF、DOCX、XLSX 与 PPTX 通过原来源账本及学习队列显式导入。回执保留解析损失，统一查询按具体坐标打开已存档版本。原生记忆从可信绑定只读查询，文件变化后旧 Ref 要求重新查询。
+
+Windows 本机 4 项集中验收和 wheel 构建通过。旧记忆入口在隔离部署中验证了重复导入和新版回读。新增解析器为可选依赖，PDF 范围为文字层。见 [资料导入与回读](QUERY_USE.md#导入本地资料并回读原生记忆)。
+
+交付分支 `codex/document-native-memory`。

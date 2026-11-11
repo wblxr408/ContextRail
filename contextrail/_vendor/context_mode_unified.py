@@ -11,8 +11,9 @@ from datetime import datetime
 
 def merge_sources(groups,view):
     results=[]
-    for source in ('task','events','memory'):
-        for rank,hit in enumerate(groups.get(source,()),1):
+    source_order={source:index for index,source in enumerate(groups)}
+    for source,hits in groups.items():
+        for rank,hit in enumerate(hits,1):
             results.append({**hit,'source_rank':rank,'fusion_score':1/(60+rank)})
     if view=='timeline':
         def order(hit):
@@ -21,5 +22,5 @@ def merge_sources(groups,view):
             except (ValueError,TypeError):stamp=None
             return stamp is None,stamp or 0,hit['origin'],hit['source_rank']
         results.sort(key=order)
-    else:results.sort(key=lambda h:(-h['fusion_score'],('task','events','memory').index(h['origin']),h['source_rank']))
+    else:results.sort(key=lambda h:(-h['fusion_score'],source_order[h['origin']],h['source_rank']))
     return results

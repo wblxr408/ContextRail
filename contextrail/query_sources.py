@@ -27,11 +27,14 @@ class QueryBinding:
     memory_mode:str='text'
     timeout_seconds:float=12
     snapshot:str|None=None
+    document_imports:bool=False
+    native_memory_files:tuple=()
 
     @classmethod
     def parse(cls,value,task,workspace=None):
         if value is None:return None
-        allowed={'schema','workspace','task','memory_home','native_sessions','memory_mode','timeout_seconds','snapshot'}
+        allowed={'schema','workspace','task','memory_home','native_sessions','memory_mode','timeout_seconds','snapshot',
+                 'document_imports','native_memory_files'}
         if not isinstance(value,dict) or value.keys()-allowed or value.get('schema')!=1 or value.get('task')!=task:raise InvalidRequest('Query binding must name the exact task')
         root=value.get('workspace')
         if not isinstance(root,str) or not Path(root).is_absolute():raise InvalidRequest('Query workspace must be an absolute host binding')
@@ -51,7 +54,28 @@ class QueryBinding:
         if mode not in {'text','hybrid'} or type(timeout) not in (int,float) or not math.isfinite(timeout) or not 0<timeout<=20:raise InvalidRequest('Invalid bound memory mode or timeout')
         snapshot=value.get('snapshot')
         if snapshot is not None:identifier(snapshot)
-        return cls(root,task,Path(home).resolve() if home else None,tuple(pairs),mode,timeout,snapshot)
+        documents=value.get('document_imports',False)
+        if type(documents) is not bool or (documents and home is None):
+            raise InvalidRequest('Document imports require their original memory home')
+        files=value.get('native_memory_files',[])
+        if not isinstance(files,list) or len(files)>8:
+            raise InvalidRequest('Bind at most eight exact native memory files')
+        selected_files=[]
+        for item in files:
+            if (not isinstance(item,dict) or set(item)!={'id','client','path'}
+                    or not isinstance(item['client'],str) or item['client'] not in {'codex','claude'}
+                    or not isinstance(item['path'],str) or len(item['path'])>4096
+                    or not Path(item['path']).is_absolute() or Path(item['path']).suffix.casefold()!='.md'):
+                raise InvalidRequest('Invalid native memory file binding')
+            identifier(item['id'])
+            if len(item['id'])>128:
+                raise InvalidRequest('Native memory binding ID is too long')
+            selected_files.append((item['id'],item['client'],Path(item['path']).resolve()))
+        if (len({item[0] for item in selected_files})!=len(selected_files)
+                or len({item[2] for item in selected_files})!=len(selected_files)):
+            raise InvalidRequest('Native memory files and binding IDs must be unique')
+        return cls(root,task,Path(home).resolve() if home else None,tuple(pairs),mode,timeout,snapshot,
+                   documents,tuple(selected_files))
 
     @classmethod
     def load(cls,path,task,workspace):

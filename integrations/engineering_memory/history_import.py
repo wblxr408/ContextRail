@@ -68,7 +68,17 @@ def enqueue(store,source,scope,event_key,content,occurred_at,kind):
 
 def import_document(store,path,scope):
     path=canonical_path(path);scope=canonical_path(scope)
-    if path.suffix.casefold() not in {'.md','.txt','.json'}:raise ValueError('Only UTF-8 text/Markdown/JSON documents are supported')
+    if path.suffix.casefold() in {'.pdf','.docx','.xlsx','.pptx'}:
+        from document_memory import import_document as import_structured
+        from rail_errors import RailError
+        try:
+            result=import_structured(store.db,path,scope)
+        except RailError as exc:
+            raise ValueError(str(exc)) from exc
+        if result['status']=='parser_unavailable':
+            raise ValueError('Install the optional document parser in the existing memory CLI environment')
+        return result['queued']
+    if path.suffix.casefold() not in {'.md','.txt','.json'}:raise ValueError('Supported documents are UTF-8 text/Markdown/JSON, PDF, DOCX, XLSX and PPTX')
     if not path.is_relative_to(scope):raise ValueError('Document must be inside its explicitly selected workspace')
     from datetime import datetime,timezone
     text=path.read_text(encoding='utf-8-sig')

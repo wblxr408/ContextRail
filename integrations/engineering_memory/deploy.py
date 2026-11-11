@@ -25,6 +25,15 @@ def deploy(home):
     changes['workscene_extract.py']=(root/'contextrail/workscene_extract.py').read_text(encoding='utf-8').replace('from ._vendor.context_mode_scene import ','from context_mode_scene import ')
     changes['fidelity.py']=(root/'contextrail/fidelity.py').read_text(encoding='utf-8')
     changes['derived_pages.py']=(root/'contextrail/derived_pages.py').read_text(encoding='utf-8')
+    changes['document_extract.py']=(root/'contextrail/document_extract.py').read_text(encoding='utf-8')
+    changes['rail_errors.py']=(root/'contextrail/errors.py').read_text(encoding='utf-8')
+    document=(root/'contextrail/document_memory.py').read_text(encoding='utf-8')
+    for local,remote in (('.capture_policy','capture_policy'),('.capture_rules','capture_rules'),
+                         ('.document_extract','document_extract'),('.errors','rail_errors'),
+                         ('.learning_origin','learning_origin'),('.sanitization','capture_sanitizer'),
+                         ('.source_events','event_identity')):
+        document=document.replace('from '+local+' import ','from '+remote+' import ')
+    changes['document_memory.py']=document
     for name in ('reflect-schema.json','reflect-instructions.txt'):
         changes[name]=(Path(__file__).parent/name).read_text(encoding='utf-8')
     for name in ('ingest_delivery.py','stream_cursor.py'):
