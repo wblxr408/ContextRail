@@ -31,7 +31,7 @@ Windows 上两项集中用例和 wheel 构建通过。实际自用任务 revisio
 
 受管入口启动选定的 Codex 或 Claude Code，将精确快照和用户原文送入原生 CLI。复用现有只读 MCP、Windows Job、源会话读取与原生配置。两个阶段用例验证两端回读同一快照及 CRLF 冷页、原生退出码和会话身份，并验证无关快照在启动前被拒绝。wheel 构建通过。
 
-在 Windows 本机中文临时目录运行 `examples/native_client_acceptance.py --managed`。Codex 调用 `context.packet` 与 `context.get`，原文和最终 JSON 均一致，退出 0。Claude Code 启动事件返回自己的原生 ID，选用同一快照并报告未绑定源历史，模型调用遇到 429，在 170 秒内未调用 MCP，启动器返回 124。两项仍保留开放。见 [受管启动与回执](NATIVE_CLIENTS.md#通过指定客户端继续同一工作块)。
+在 Windows 本机中文临时目录运行 `examples/native_client_acceptance.py --managed`。Codex 调用 `context.packet` 与 `context.get`，原文和最终 JSON 均一致，退出 0。Claude Code 启动事件返回自己的原生 ID，报告当前任务 MCP 已连接并列出 34 个 Rail 工具。模型接口记录了 10 次 429 重试，170 秒内未调用 MCP，启动器返回 124。回执保留同一快照与未绑定的源历史状态。两项仍保留开放。见 [受管启动与回执](NATIVE_CLIENTS.md#通过指定客户端继续同一工作块)。
 
 交付分支 `codex/native-managed-continuation`。
 
