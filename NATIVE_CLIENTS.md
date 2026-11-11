@@ -47,7 +47,15 @@ memory-command 文件是可信本机 argv 数组，不能来自模型参数或�
 .venv/Scripts/python.exe -m contextrail client-apply --workspace D:/my-project --layout D:/my-project/.context-rail/clients/v1
 ```
 
-可用重复的 `--client codex` / `--client claude` 只准备或应用实际使用的一端。应用保留其他 MCP、Hook、用户字段与 Codex TOML 注释；重复应用同一布局不重复添加处理器。已有同名 MCP entry 内容不同则明确冲突，不覆盖未知配置。变更前的文件备份保存到 `.context-rail/client-config-backups/`。这还不是任意版本配置的自动迁移/卸载器，相关 H05 后续继续实施。
+可用重复的 `--client codex` / `--client claude` 只准备或应用实际使用的一端。准备结果的 `configuration` 显示实际预算和来源。任务与 Hook 额度写入生成布局，调整后重新准备并应用。MCP 读取和响应限额在服务进程启动时解析，准备时显式指定的限额写入启动参数。见 [项目配置说明](SELF_USE.md#项目配置与初始化)。
+
+重复应用同一布局不会新增处理器。升级时在原有位置替换受管 Hook，保留其他 Hook 的顺序、MCP、用户字段以及 Codex TOML 注释和换行。安装回执记录布局与受管条目。已有同名 MCP 内容不同，或回执中的条目已被手工改动时，应用或移除报告冲突，保留配置供人工核对。变更前的文件备份保存到 `.context-rail/client-config-backups/`。
+
+```powershell
+.venv/Scripts/python.exe -m contextrail client-remove --workspace D:/my-project --client codex
+```
+
+此命令移除 Codex 的受管条目，原有记忆 Hook 及其他配置照常使用。旧布局没有安装回执时，可通过 `client-apply --adopt-layout <旧布局目录>` 提供原生成文件，只有实际配置中唯一且精确匹配的条目才会纳入管理。
 
 ## 任务包与冷页
 
@@ -57,7 +65,7 @@ memory-command 文件是可信本机 argv 数组，不能来自模型参数或�
 {"snapshot":"<exact-Rail-snapshot>","budget":8192}
 ```
 
-只接受 snapshot/budget，scope/session 固定于可信启动参数。预算为 context JSON 的 UTF-8 bytes，不能超过 reader 的配置读取额度；工具外层元数据另计。无写入、命令执行或源路径覆盖接口。[OpenAI stdio MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+只接受 snapshot/budget，scope/session 固定于可信启动参数。省略 `budget` 时，使用有效 `context_bytes` 和 reader 读取额度中较小的值；准备布局时显式设置的 `--context-bytes` 随 MCP 启动参数传入。预算为 context JSON 的 UTF-8 bytes，不能超过 reader 的配置读取额度；工具外层元数据另计。无写入、命令执行或源路径覆盖接口。[OpenAI stdio MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 
 UserPromptSubmit 包装器校验 cwd 与显式绑定，使用原生 session_id 和可选 turn_id；Claude 没有 turn_id 时保留 null，不伪造。transcript_path 不会被打开。输入中的 prompt 不用于选择 task、数据库或导出路径。[两端 Hook 字段与输出](https://learn.chatgpt.com/docs/hooks)、[Claude Hooks](https://code.claude.com/docs/en/hooks)
 

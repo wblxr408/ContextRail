@@ -97,12 +97,17 @@ def parser() -> argparse.ArgumentParser:
         sub = commands.add_parser(command)
         sub.add_argument("--workspace", type=Path, default=Path.cwd())
         sub.add_argument("--config", type=Path)
+        sub.add_argument("--defaults", type=Path, help="Personal ContextRail byte limits TOML")
         sub.add_argument("--task")
         sub.add_argument("--project-id")
         sub.add_argument("--tenant")
         sub.add_argument("--store")
         sub.add_argument("--response-bytes", type=int)
         sub.add_argument("--read-bytes", type=int)
+        if command in ("project-info", "client-prepare", "mcp"):
+            sub.add_argument("--context-bytes", type=int)
+        if command in ("project-info", "client-prepare"):
+            sub.add_argument("--hook-bytes", type=int)
         if command in {'mcp','query','status','metrics','file-history','history-details','history-neighborhood','deliverables','deliverable'}:sub.add_argument('--query-binding',type=Path,help='Trusted task/workspace source selection; never supplied by model arguments')
         if command not in ("project-info", "host-hook", "client-toggle", "existing-memory-hook", "client-apply", "client-remove", "memory-save", "native-history"):
             sub.add_argument("--session", required=True)
@@ -194,14 +199,14 @@ def parser() -> argparse.ArgumentParser:
             else:
                 sub.add_argument("--snapshot", required=True, help="Exact Rail snapshot returned by bridge-import")
                 if command == "bridge-packet":
-                    sub.add_argument("--budget", type=int, default=8192)
+                    sub.add_argument("--budget", type=int)
                 else:
                     sub.add_argument("--receipt", type=Path, required=True)
         elif command in ('recover','resume-bind','resume-offer','resume-accept','resume-abort','intent-project'):
             if command in ('recover','resume-bind','resume-offer'):
                 sub.add_argument('--snapshot',required=command!='recover')
                 sub.add_argument('--version',type=int,required=command!='recover')
-                sub.add_argument('--budget',type=int,default=8192)
+                sub.add_argument('--budget',type=int)
             if command in ('resume-bind','resume-offer','resume-abort'):sub.add_argument('--epoch',type=int,required=True)
             if command in ('recover','resume-bind','intent-project'):
                 sub.add_argument('--client',choices=('codex','claude'),required=command!='recover')
@@ -230,7 +235,7 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--epoch", type=int, required=True)
         elif command in ("continue", "explain", "brief"):
             sub.add_argument("--snapshot", required=True)
-            sub.add_argument("--budget", type=int, default=8192)
+            sub.add_argument("--budget", type=int)
             if command in ('brief','explain'):
                 sub.add_argument('--offset',type=int,default=0)
                 sub.add_argument('--limit',type=int,default=20)
@@ -246,8 +251,6 @@ def parser() -> argparse.ArgumentParser:
             sub.add_argument("--memory-command", type=Path, help="JSON argv for the existing memory hook")
             sub.add_argument("--task-memory-command", type=Path, help="Optional explicit argv override only while this task binding is enabled")
             sub.add_argument("--native-memory-client", choices=("codex", "claude"), action="append", default=[])
-            sub.add_argument("--context-bytes", type=int, default=8192)
-            sub.add_argument("--hook-bytes", type=int, default=24576)
             sub.add_argument('--query-binding',type=Path)
             sub.add_argument('--context-assistance',action='store_true',help='Enable exact compact recovery and optional file history on supported main-session hooks')
         elif command in ("host-hook", "client-toggle"):
@@ -318,9 +321,11 @@ def project_command(args):
         except TypeError:raise InvalidRequest('History options are invalid') from None
         print(canonical(output));return
     from .project import load_project
-    config = load_project(args.workspace, config_path=args.config,
-                          overrides={key: getattr(args, key) for key in
-                                     ("task", "project_id", "tenant", "store", "response_bytes", "read_bytes")})
+    config = load_project(args.workspace, config_path=args.config, defaults_path=args.defaults,
+                          overrides={key: getattr(args, key, None) for key in
+                                     ("task", "project_id", "tenant", "store", "response_bytes", "read_bytes",
+                                      "context_bytes", "hook_bytes")})
+    packet_budget = args.budget if getattr(args, 'budget', None) is not None else config.context_bytes
     if args.command == "project-info":
         print(canonical(config.describe()))
         return
@@ -336,7 +341,7 @@ def project_command(args):
         if args.command in {'metrics','efficiency','record-request'}:
             tools=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
             if args.command=='metrics':
-                output=tools.call('context.metrics',{'offset':args.offset,'limit':args.limit,'budget':min(config.read_bytes,max(8192,config.response_bytes))})
+                output=tools.call('context.metrics',{'offset':args.offset,'limit':args.limit,'budget':min(config.read_bytes,config.response_bytes)})
             else:
                 try:
                     data=json.loads(args.input.read_bytes() if args.input else sys.stdin.buffer.read(65537))
@@ -485,7 +490,7 @@ def project_command(args):
             from .native_clients import prepare_clients
             result = prepare_clients(store, config, Lease(args.session, args.epoch), args.snapshot, args.output,
                                       clients=args.client or ("codex", "claude"), memory_command=args.memory_command,
-                                      context_bytes=args.context_bytes, hook_bytes=args.hook_bytes, task_memory_command=args.task_memory_command,
+                                      task_memory_command=args.task_memory_command,
                                       native_memory_clients=args.native_memory_client,query_binding=args.query_binding,context_assistance=args.context_assistance)
             print(canonical(result))
         elif args.command.startswith("bridge-"):
@@ -494,7 +499,7 @@ def project_command(args):
             if args.command == "bridge-import":
                 output = bridge.import_bundle(args.bundle, args.bridge_scope, Lease(args.session, args.epoch))
             elif args.command == "bridge-packet":
-                output = bridge.packet(args.snapshot, budget=args.budget)
+                output = bridge.packet(args.snapshot, budget=packet_budget)
             else:
                 output = bridge.receipt(args.snapshot, args.receipt)
             print(canonical(output))
@@ -502,7 +507,7 @@ def project_command(args):
             try:requested=json.loads(args.requested)
             except ValueError:raise InvalidRequest('Requested refs must be JSON') from None
             output=ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes).call('context.'+args.command,
-                {'snapshot':args.snapshot,'budget':args.budget,'offset':args.offset,'limit':args.limit,'trace_offset':args.trace_offset,'trace_limit':args.trace_limit,'requested':requested})
+                {'snapshot':args.snapshot,'budget':packet_budget,'offset':args.offset,'limit':args.limit,'trace_offset':args.trace_offset,'trace_limit':args.trace_limit,'requested':requested})
             if args.state_output:
                 from .layered import export_state
                 export_state(output,args.state_output)
@@ -512,13 +517,13 @@ def project_command(args):
             recovery=Recovery(store,config,args.session)
             if args.command=='recover':
                 if args.snapshot is not None and args.version is not None:
-                    output=recovery.preview(args.snapshot,args.version,budget=args.budget,client=args.client,native_session=args.native_session)
+                    output=recovery.preview(args.snapshot,args.version,budget=packet_budget,client=args.client,native_session=args.native_session)
                 else:output=recovery.candidates(snapshot=args.snapshot,version=args.version,client=args.client,native_session=args.native_session,offset=args.offset,limit=args.limit)
             elif args.command=='resume-bind':output=recovery.bind(args.snapshot,args.version,Lease(args.session,args.epoch),client=args.client,native_session=args.native_session,binding_id=args.binding_id)
             elif args.command=='resume-offer':
                 try:target=Target(**json.loads(args.target))
                 except (ValueError,TypeError):raise InvalidRequest('Target must be a JSON session/provider/model object') from None
-                output=recovery.offer(args.snapshot,args.version,Lease(args.session,args.epoch),target,operation_id=args.operation_id,budget=args.budget)
+                output=recovery.offer(args.snapshot,args.version,Lease(args.session,args.epoch),target,operation_id=args.operation_id,budget=packet_budget)
             elif args.command=='resume-accept':
                 from .bridge import _read, _json, MAX_LEDGER
                 output=recovery.accept(args.operation_id,_json(_read(args.receipt,MAX_LEDGER)))
@@ -561,13 +566,13 @@ def project_command(args):
             if args.command == "status":
                 status_tools = ContextTools(store,config.scope,args.session,max_read_bytes=config.read_bytes,query_binding=query_binding)
                 status_tools.config_view = config.describe()
-                output = status_tools.call('context.status',{'budget':min(config.read_bytes,max(8192,config.response_bytes))})
+                output = status_tools.call('context.status',{'budget':min(config.read_bytes,config.response_bytes)})
             elif args.command == "checkpoints":
                 output = navigation.checkpoints(offset=args.offset, limit=args.limit)
             elif args.command == "search":
                 output = navigation.search(args.query, limit=args.limit)
             else:
-                output = navigation.resume(args.snapshot, budget=args.budget)
+                output = navigation.resume(args.snapshot, budget=packet_budget)
             print(canonical(output))
         else:
             import asyncio

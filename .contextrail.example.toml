@@ -21,6 +21,8 @@ unknown_tools = "metadata_only"
 required = [] # Declared materials; automatic loading is a later integration.
 response_bytes = 4096
 read_bytes = 65536
+context_bytes = 8192 # Default task packet and native task context.
+hook_bytes = 24576 # Complete native Hook output, including memory.
 
 [directory]
 include = [] # Empty selects all regular files in the explicitly chosen root.

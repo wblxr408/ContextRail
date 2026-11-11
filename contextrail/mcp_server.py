@@ -6,6 +6,7 @@ from .capabilities import HostCapabilities
 from .errors import InvalidRequest, RailError
 from .host import ContextTools
 from .models import canonical
+from .project import CONTEXT_DEFAULTS
 
 
 async def run_stdio(tools: ContextTools):
@@ -21,6 +22,8 @@ async def run_stdio(tools: ContextTools):
     from uuid import uuid4
     generation=uuid4().hex
     capabilities = HostCapabilities.read_only()
+    project = getattr(tools, "config_view", {})
+    default_packet_budget = min(project.get("context_bytes", CONTEXT_DEFAULTS["context_bytes"]), tools.max_read_bytes)
 
     async def list_tools():
         definitions = ContextTools.definitions() + [{"name": "context.capabilities",
@@ -52,7 +55,7 @@ async def run_stdio(tools: ContextTools):
                     from .bridge import BridgeEvidence
                     from .models import integer
                     tools._keys(arguments,required={'snapshot'},optional={'budget'})
-                    budget=arguments.get('budget',min(8192,tools.max_read_bytes));integer(budget,1)
+                    budget=arguments.get('budget',default_packet_budget);integer(budget,1)
                     if budget>tools.max_read_bytes:raise InvalidRequest('Packet context budget exceeds the bound reader limit.')
                     return BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(arguments['snapshot'],budget=budget)
                 return tools.call(name,arguments)

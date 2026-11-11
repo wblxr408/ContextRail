@@ -17,7 +17,19 @@ Copy-Item .contextrail.example.toml .contextrail.toml
 
 配置见 [.contextrail.example.toml](.contextrail.example.toml)。从 `--workspace` 指定目录向上找最近的 `.contextrail.toml`，也可 `--config` 指定。所有配置相对路径和相对 `--store` 都锚定 marker 所在目录；无 marker 时锚定传入目录。`--workspace` 是查找起点，marker 的 `project.workspace` 决定实际工作区。
 
-`--task`、`--project-id`、`--store`、`--response-bytes`、`--read-bytes` 优先于配置；`project-info.sources` 显示来源，覆盖只对本次调用有效：
+预算依次采用本次命令参数、项目设置、个人默认值和内置值。个人默认文件是 `~/.contextrail/defaults.toml`，也可用 `--defaults` 指定，传入的相对路径以 `--workspace` 为起点。它只接受以下 `[context]` 字段，项目身份、库路径和采集规则仍由项目设置及相应命令参数决定。
+
+```toml
+[context]
+response_bytes = 4096
+read_bytes = 65536
+context_bytes = 8192
+hook_bytes = 24576
+```
+
+`context_bytes` 是 Bridge 任务包和原生任务上下文的默认额度，Bridge 命令的 `--budget` 可覆盖单次任务包。`hook_bytes` 限制原生 Hook 完整输出，包含任务和记忆。已生成的原生 Hook 使用准备布局时解析的任务和 Hook 额度。修改后用 `client-prepare` 生成新布局，再用 `client-apply` 升级。
+
+`project-info` 显示生效值，`sources` 标记为 `explicit`、`config`、`personal` 或 `default`。`--task`、`--project-id`、`--store` 也可临时覆盖项目设置。以下命令只调整本次调用。
 
 ```powershell
 .venv/Scripts/python.exe -m contextrail project-info --workspace D:/ContextRail --task investigate --response-bytes 2048

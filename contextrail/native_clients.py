@@ -108,8 +108,17 @@ def read_registry(path):
 
 
 def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIENTS, memory_command=None,
-                    context_bytes=8192, hook_bytes=24576, task_memory_command=None, native_memory_clients=(), query_binding=None, context_assistance=False):
+                    context_bytes=None, hook_bytes=None, task_memory_command=None, native_memory_clients=(), query_binding=None, context_assistance=False):
     from dataclasses import asdict
+    settings = config.context_settings()
+    for key, override in (("context_bytes", context_bytes), ("hook_bytes", hook_bytes)):
+        if override is not None:
+            integer(override, 1)
+            if override > 16 * 1024 * 1024:
+                raise InvalidRequest("Binding byte budgets cannot exceed 16 MiB.")
+            settings[key] = override
+            settings["sources"][key] = "explicit"
+    context_bytes, hook_bytes = settings["context_bytes"], settings["hook_bytes"]
     clients = tuple(clients)
     if query_binding is not None:
         from .query_sources import QueryBinding
@@ -156,9 +165,14 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
         for client, reader in zip(clients, readers):
             args = ["-u", str(output / "entry.py"), "mcp", "--workspace", str(config.workspace), "--store", str(config.store),
                     "--project-id", config.scope.project, "--tenant", config.scope.tenant, "--task", config.scope.task,
-                    "--session", reader.session, "--read-bytes", str(config.read_bytes)]
+                    "--session", reader.session]
             if config.config:
                 args += ["--config", str(config.config)]
+            if config.defaults and config.defaults_explicit:
+                args += ["--defaults", str(config.defaults)]
+            for key in ("read_bytes", "response_bytes", "context_bytes"):
+                if settings["sources"][key] == "explicit":
+                    args += ["--" + key.replace("_", "-"), str(settings[key])]
             if query_binding is not None:args+=['--query-binding',str(query_binding)]
             server = {"command": sys.executable, "args": args}
             hook_args = [sys.executable.replace("\\", "/"), "-u", (output / "entry.py").as_posix(), "host-hook", "--registry",
@@ -194,7 +208,8 @@ def prepare_clients(store, config, lease, base_snapshot, output, *, clients=CLIE
         # The directory appears only once all generated files are complete.
         os.rename(stage, output)
     return {"registry": str(output / "registry.json"), "entry": str(output / "entry.py"), "source_root": source_root,
-            "snapshot": snapshot, "base_snapshot": base_snapshot, "clients": profiles, "state": "prepared_not_deployed"}
+            "snapshot": snapshot, "base_snapshot": base_snapshot, "clients": profiles,
+            "configuration": settings, "state": "prepared_not_deployed"}
 
 
 def toggle_client(path, client, enabled):

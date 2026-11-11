@@ -66,9 +66,9 @@ class NativeContextTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", "replace"))
         return json.loads(result.stdout)
 
-    def prepare(self):
+    def prepare(self, *args):
         self.layout = self.cli("client-prepare", "--session", "owner", "--epoch", "0", "--snapshot", self.exported["snapshot"],
-                               "--output", self.root / "client layout", "--memory-command", self.memory_command)
+                               "--output", self.root / "client layout", "--memory-command", self.memory_command, *args)
         self.registry_path = Path(self.layout["registry"])
         self.registry = json.loads(self.registry_path.read_bytes())
         return self.layout
@@ -87,7 +87,9 @@ class NativeContextTests(unittest.TestCase):
             from mcp.client.stdio import stdio_client
         except ImportError:
             self.skipTest("Requires the optional MCP SDK extra.")
-        layout = self.prepare()
+        (self.workspace / ".contextrail.toml").write_text(
+            '[project]\ntask="native-demo"\n[context]\ncontext_bytes=7500\n', encoding="utf-8")
+        layout = self.prepare("--context-bytes", "7400")
         async def exercise(client):
             profile = layout["clients"][client]
             if client == "codex":
@@ -102,6 +104,9 @@ class NativeContextTests(unittest.TestCase):
                     self.assertFalse(packet.isError)
                     data = json.loads(packet.content[0].text)
                     self.assertEqual(data["context"]["task"]["objective"], self.statement)
+                    implicit = await connection.call_tool("context.packet", {"snapshot": self.exported["snapshot"]})
+                    self.assertFalse(implicit.isError)
+                    self.assertEqual(json.loads(implicit.content[0].text)["budget"], 7400)
                     tail = await connection.call_tool("context.get", {**self.cold_ref, "start": len(self.cold) - len(b"NATIVE-COLD-9264\r\n")})
                     self.assertFalse(tail.isError)
                     self.assertEqual(json.loads(tail.content[0].text)["content"], "NATIVE-COLD-9264\r\n")

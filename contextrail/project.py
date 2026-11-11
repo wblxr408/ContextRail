@@ -11,6 +11,14 @@ from .errors import InvalidRequest
 from .models import Scope, identifier, integer
 
 
+CONTEXT_DEFAULTS = {
+    "response_bytes": 4096,
+    "read_bytes": 65536,
+    "context_bytes": 8192,
+    "hook_bytes": 24576,
+}
+
+
 def _path(value, anchor):
     if not isinstance(value, str) or not value.strip() or "\x00" in value:
         raise InvalidRequest("Expected a nonempty filesystem path.")
@@ -53,15 +61,50 @@ class ProjectConfig:
     config: Path | None
     directory: dict = field(default_factory=dict)
     capture: dict = field(default_factory=dict)
+    context_bytes: int = CONTEXT_DEFAULTS["context_bytes"]
+    hook_bytes: int = CONTEXT_DEFAULTS["hook_bytes"]
+    defaults: Path | None = None
+    defaults_explicit: bool = False
+
+    def context_settings(self):
+        return {
+            **{name: getattr(self, name) for name in CONTEXT_DEFAULTS},
+            "sources": {name: self.sources.get(name, "default") for name in CONTEXT_DEFAULTS},
+            "config": str(self.config) if self.config else None,
+            "defaults": str(self.defaults) if self.defaults else None,
+        }
 
     def describe(self):
         return {"workspace": str(self.workspace), "store": str(self.store), "scope": asdict(self.scope),
                 "identity": self.identity, "required": list(self.required), "capture": self.capture or {"ignore": list(self.ignore)},
-                "response_bytes": self.response_bytes, "read_bytes": self.read_bytes,
-                "sources": self.sources, "directory": self.directory, "config": str(self.config) if self.config else None}
+                **self.context_settings(), "sources": self.sources, "directory": self.directory}
 
 
-def load_project(start, *, config_path=None, overrides=None):
+def _personal_context(defaults_path, start):
+    path = (_path(str(defaults_path), start) if defaults_path is not None
+            else Path.home() / ".contextrail" / "defaults.toml")
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(32769)
+    except FileNotFoundError:
+        if defaults_path is None:
+            return {}, None
+        raise InvalidRequest("The specified personal defaults file is unavailable.") from None
+    except OSError:
+        raise InvalidRequest("Cannot read personal ContextRail defaults.") from None
+    try:
+        if len(raw) > 32768:
+            raise ValueError()
+        data = tomllib.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeError):
+        raise InvalidRequest("Personal ContextRail defaults must be valid UTF-8 TOML within 32 KiB.") from None
+    context = data.get("context", {})
+    if set(data) - {"context"} or not isinstance(context, dict) or set(context) - CONTEXT_DEFAULTS.keys():
+        raise InvalidRequest("Personal defaults accept only ContextRail byte limits in [context].")
+    return context, path
+
+
+def load_project(start, *, config_path=None, defaults_path=None, overrides=None):
     requested_workspace = str(start)
     start = Path(start).resolve()
     if not start.is_dir():
@@ -75,7 +118,7 @@ def load_project(start, *, config_path=None, overrides=None):
     except (OSError, ValueError) as exc:
         raise InvalidRequest("Cannot read valid project TOML.") from exc
     allowed = {"project": {"id", "tenant", "task", "workspace"}, "storage": {"path"},
-               "capture": {"ignore","allow","metadata_only","user_mode","assistant_mode","default_mode","unknown_tools","tool_modes"}, "context": {"required", "response_bytes", "read_bytes"},
+               "capture": {"ignore","allow","metadata_only","user_mode","assistant_mode","default_mode","unknown_tools","tool_modes"}, "context": {"required", *CONTEXT_DEFAULTS},
                "directory": {"include", "exclude", "respect_gitignore", "max_files", "max_depth", "max_file_bytes", "max_directory_entries"}}
     if set(data) - allowed.keys():
         raise InvalidRequest("Unknown project configuration table.")
@@ -84,25 +127,34 @@ def load_project(start, *, config_path=None, overrides=None):
             raise InvalidRequest("Unknown project configuration field.")
     anchor = marker.parent if marker else start
     project, storage, context, capture = (data.get(key, {}) for key in ("project", "storage", "context", "capture"))
+    personal, defaults = _personal_context(defaults_path, start)
     workspace = _path(project.get("workspace", "."), anchor)
     if not workspace.is_dir():
         raise InvalidRequest("Configured workspace must be an existing directory.")
     identity = repository_identity(workspace)
     identity["requested_workspace"] = requested_workspace
     sources = {}
-    def pick(name, table, key, default):
-        sources[name] = "explicit" if name in explicit else "config" if key in table else "default"
-        return explicit.get(name, table.get(key, default))
+    def pick(name, table, key, default, personal_values=None):
+        if name in explicit:
+            sources[name] = "explicit"
+            return explicit[name]
+        if key in table:
+            sources[name] = "config"
+            return table[key]
+        if personal_values is not None and key in personal_values:
+            sources[name] = "personal"
+            return personal_values[key]
+        sources[name] = "default"
+        return default
     task = pick("task", project, "task", "default")
     project_id = pick("project_id", project, "id", identity["repository_id"])
     tenant = pick("tenant", project, "tenant", "local")
     store = _path(pick("store", storage, "path", ".context-rail/state.sqlite3"), anchor)
-    response_bytes = pick("response_bytes", context, "response_bytes", 4096)
-    read_bytes = pick("read_bytes", context, "read_bytes", 65536)
+    limits = {name: pick(name, context, name, fallback, personal) for name, fallback in CONTEXT_DEFAULTS.items()}
     sources.update(workspace="config" if "workspace" in project else "marker" if marker else "default",
                    required="config" if "required" in context else "default",
                    ignore="config" if "ignore" in capture else "default")
-    for value in (response_bytes, read_bytes):
+    for value in (*personal.values(), *limits.values()):
         integer(value, 1)
         if value > 16 * 1024 * 1024:
             raise InvalidRequest("Context byte limits cannot exceed 16 MiB.")
@@ -123,5 +175,9 @@ def load_project(start, *, config_path=None, overrides=None):
     from .capture_rules import validate_capture
     try:capture_config=validate_capture(capture)
     except ValueError:raise InvalidRequest('Invalid project capture policy') from None
-    return ProjectConfig(workspace, store, Scope(tenant, project_id, identity["worktree_id"], task), identity,
-                         paths(context, "required"), paths(capture, "ignore"), response_bytes, read_bytes, sources, marker, directory,capture_config)
+    return ProjectConfig(
+        workspace, store, Scope(tenant, project_id, identity["worktree_id"], task), identity,
+        paths(context, "required"), paths(capture, "ignore"), limits["response_bytes"], limits["read_bytes"],
+        sources, marker, directory, capture_config, limits["context_bytes"], limits["hook_bytes"], defaults,
+        defaults_path is not None,
+    )

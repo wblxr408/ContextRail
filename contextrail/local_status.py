@@ -5,6 +5,7 @@ from contextlib import closing
 from .capabilities import HostCapabilities
 from .errors import BudgetExceeded,RailError
 from .models import canonical
+from .project import CONTEXT_DEFAULTS
 from .source_events import workspace_key
 from .federation import bound_sources
 from .query_sources import event_selection
@@ -44,7 +45,9 @@ def status(tools,*,snapshot=None,budget=8192):
             'writes_performed':False}
         view=getattr(tools,'config_view',None)
         if view:
-            result['effective_config']['project']={k:view[k] for k in ('workspace','store','config','sources','response_bytes','read_bytes')}
+            keys = ('workspace', 'store', 'config', 'defaults', 'sources', 'response_bytes',
+                    'read_bytes', 'context_bytes', 'hook_bytes')
+            result['effective_config']['project'] = {key: view[key] for key in keys if key in view}
         row=tools.store.db.execute("SELECT sequence,at,metadata FROM events WHERE scope=? AND kind='native_context.prepared' ORDER BY sequence DESC LIMIT 1",(tools.scope.key,)).fetchone()
         result['injection']={'status':'prepared_receipt_observed' if row else 'unknown','model_consumption':'unknown'}
         if row:
@@ -57,7 +60,9 @@ def status(tools,*,snapshot=None,budget=8192):
     if selected:
         try:
             from .bridge import BridgeEvidence
-            packet=BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(selected,budget=8192)
+            context_bytes = (view or {}).get("context_bytes", CONTEXT_DEFAULTS["context_bytes"])
+            packet=BridgeEvidence(tools.store,tools.scope,tools.session_id).packet(
+                selected, budget=min(context_bytes, tools.max_read_bytes))
             result['requirements'].update(snapshot=selected,required_ids=packet['required_ids'],manifest_ref=packet['manifest_ref'],external_source_current=True)
             if tools.store.task(tools.scope)['version']!=task['version']:
                 result['requirements']['external_source_current']='task_changed_during_status_read'

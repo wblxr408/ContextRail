@@ -1,6 +1,6 @@
 # 自用模块交付
 
-按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 50/72。
+按 TODO 持续实施。完成一大阶段后集中验收，再提交上传该阶段。权威清单为 [docs/self-use-integration-todo.md](docs/self-use-integration-todo.md)。当前完成 52/72。
 
 ## 首次集中上传：截至 D07 / H03 / D08
 
@@ -39,3 +39,9 @@
 错误处理与验证记录按来源绑定，相邻成功保留为候选。补读精确 Codex 或 Claude 会话，返回缺口、未知调用及处理版原文 Ref，并可导出 Bridge 恢复材料。Windows 实际子进程、双客户端日志及 18 项阶段用例通过。详见 [阶段验收](openspec/changes/causal-recovery-history/tasks.md)。
 
 交付分支 `codex/causal-recovery-history`。
+
+## 第七模块 H04 / H05
+
+统一 CLI、Bridge 和原生接线的项目预算，支持个人默认值、项目覆盖和单次覆盖。升级在原位置更新受管 Hook，移除按回执保留原配置和记忆流程。Windows 上 11 项消费者与受影响回归通过，两端使用真实 MCP stdio 读取任务包和冷页，wheel 构建通过。验收使用临时工作区及符合既有协议的记忆 Hook。见 [项目配置](SELF_USE.md#项目配置与初始化)和[客户端接线](NATIVE_CLIENTS.md#任意自用任务的准备与应用)。
+
+交付分支 `codex/project-config-ownership`。
